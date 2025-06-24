@@ -1,47 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import {
-  TrendingUp,
-  Zap,
-  Shield,
-  BarChart3,
-  Bot,
-  Users,
-  Star,
-  ChevronDown,
-  Menu,
-  X,
-  Play,
-  Activity,
-  Brain,
-  Target,
-  DollarSign,
-  Briefcase,
-  Settings,
-  LogIn,
-  UserPlus,
-  Mail,
-  Phone,
-  MapPin,
-  Github,
-  Twitter,
-  Linkedin,
-  CheckCircle,
-  ArrowRight,
-  LineChart,
-  PieChart,
-  BarChart,
-  Cpu,
-  Database,
-  Globe,
-  Lock,
-  Clock,
-  Smartphone,
-  TrendingDown,
-  AlertTriangle,
-  Layers,
-  Eye,
-  Gauge,
-  Calculator
+  TrendingUp, Zap, Shield, BarChart3, Bot, Users, Star, ChevronDown, Menu, X, Play, Activity, Brain, Target, DollarSign, Briefcase, Settings, LogIn, UserPlus, Mail, Phone, MapPin, Github, Twitter, Linkedin, CheckCircle, ArrowRight, LineChart, PieChart, BarChart, Cpu, Database, Globe, Lock, Clock, Smartphone, TrendingDown, AlertTriangle, Layers, Eye, Gauge, Calculator, Bitcoin, Code, Search, AlertCircle, Loader2
 } from 'lucide-react';
 
 const App = () => {
@@ -54,23 +13,125 @@ const App = () => {
   // State to manage where to redirect after login
   const [postLoginRedirect, setPostLoginRedirect] = useState(null);
 
-  // Effect to handle body scrolling when mobile menu is open and scroll to top on page change
+  const calculatorRef = useRef(null);
+  
+  // Alpha Vantage API Key
+  const API_KEY = '3LKYIGG6H6A6KT7U';
+
+  // Valid NSE/BSE stock symbols (expanded list for better coverage)
+  const VALID_STOCKS = [
+    // NIFTY 50 stocks
+    'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'HDFC', 'BHARTIARTL', 'ITC', 'KOTAKBANK',
+    'LT', 'SBIN', 'ASIANPAINT', 'AXISBANK', 'BAJFINANCE', 'MARUTI', 'SUNPHARMA', 'TITAN', 'ULTRACEMCO', 'NESTLEIND',
+    'WIPRO', 'HCLTECH', 'TECHM', 'POWERGRID', 'NTPC', 'M&M', 'TATAMOTORS', 'INDUSINDBK', 'ADANIENT', 'ADANIPORTS',
+    'JSWSTEEL', 'TATASTEEL', 'HINDALCO', 'DIVISLAB', 'DRREDDY', 'CIPLA', 'GRASIM', 'BAJAJFINSV', 'ONGC', 'COALINDIA',
+    'HDFCLIFE', 'SBILIFE', 'EICHERMOT', 'BRITANNIA', 'BAJAJ-AUTO', 'SHREECEM', 'APOLLOHOSP', 'HEROMOTOCO', 'UPL', 'BPCL',
+    // Additional popular stocks
+    'ADANIGREEN', 'ADANIPOWER', 'ZOMATO', 'PAYTM', 'NYKAA', 'PNB', 'BANKBARODA', 'CANBK', 'IDFCFIRSTB', 'IDEA',
+    'SAIL', 'VEDL', 'ASHOKLEY', 'TATAPOWER', 'AMBUJACEM', 'ACC', 'BIOCON', 'CADILAHC', 'GLENMARK', 'MINDTREE',
+    'MUTHOOTFIN', 'CHOLAFIN', 'MANAPPURAM', 'FEDERALBNK', 'RBLBANK', 'BANDHANBNK', 'AUBANK', 'INDIGO', 'SPICEJET', 'IRCTC',
+    'PVR', 'INOXLEISUR', 'JUBLFOOD', 'WESTLIFE', 'VBL', 'DABUR', 'MARICO', 'EMAMILTD', 'GODREJCP', 'PIDILITIND',
+    'BERGEPAINT', 'KANSAINER', 'HAVELLS', 'VOLTAS', 'CROMPTON', 'BATAINDIA', 'RELAXO', 'PAGEIND', 'TRENT', 'SHOPERSTOP'
+  ];
+  
+  const INDEX_SYMBOLS = {
+      'NIFTY 50': 'NSEI',
+      'SENSEX': 'BSESN',
+      'BANK NIFTY': 'NSEBANK',
+      'NIFTY IT': 'CNXIT'
+  };
+
+
+  // Effect to handle body scrolling and page transitions
   useEffect(() => {
-    if (isMenuOpen) {
-      document.body.style.overflow = 'hidden';
+    document.body.style.overflow = isMenuOpen ? 'hidden' : 'auto';
+
+    if (postLoginRedirect && isLoggedIn) {
+      const { page, section } = postLoginRedirect;
+      setCurrentPage(page);
+      // Use a timeout to ensure the page has rendered before scrolling
+      setTimeout(() => {
+        if (section === 'calculator' && calculatorRef.current) {
+          calculatorRef.current.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          window.scrollTo(0, 0);
+        }
+        setPostLoginRedirect(null); // Reset after redirecting
+      }, 100);
     } else {
-      document.body.style.overflow = 'auto';
+      window.scrollTo(0, 0);
     }
-    // Scroll to the top of the page whenever the currentPage or menu state changes
-    // unless we have a specific section to scroll to.
-    if (!postLoginRedirect) {
-       window.scrollTo(0, 0);
+  }, [currentPage, isMenuOpen, isLoggedIn, postLoginRedirect]);
+
+
+  // --- API Fetching Logic ---
+  const fetchStockData = useCallback(async (symbol) => {
+    // The API requires '.NS' for NSE stocks, but we'll handle this mapping for user-friendliness
+    const apiSymbol = `${symbol.replace('.NS', '')}.NS`;
+    try {
+      const response = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${apiSymbol}&apikey=${API_KEY}`);
+      if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+      const data = await response.json();
+
+      if (data['Note']) {
+          // Handle API call frequency limit
+          console.warn("Alpha Vantage API Note:", data['Note']);
+          return { symbol, error: "API limit reached. Please wait." };
+      }
+      
+      const quote = data['Global Quote'];
+      if (quote && quote['05. price']) {
+        const price = parseFloat(quote['05. price']);
+        const changePercentStr = quote['10. change percent'] || '0%';
+        const changePercent = parseFloat(changePercentStr.replace('%', ''));
+        return {
+          symbol: quote['01. symbol'].replace('.NS', ''),
+          price: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(price),
+          changePercent: `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(2)}%`,
+          trend: changePercent >= 0 ? 'up' : 'down',
+        };
+      }
+      return { symbol, error: "No data available." };
+    } catch (error) {
+      console.error("Error fetching stock data for", symbol, error);
+      return { symbol, error: "Failed to fetch data." };
     }
-  }, [currentPage, isMenuOpen]);
+  }, [API_KEY]);
+
+  const fetchCryptoData = useCallback(async (symbol) => {
+    try {
+      const response = await fetch(`https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=${symbol}&to_currency=INR&apikey=${API_KEY}`);
+      if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+      const data = await response.json();
+
+      if (data['Note']) {
+        console.warn("Alpha Vantage API Note:", data['Note']);
+        return { symbol, error: "API limit reached. Please wait." };
+      }
+
+      const rateInfo = data['Realtime Currency Exchange Rate'];
+      if (rateInfo && rateInfo['5. Exchange Rate']) {
+        const price = parseFloat(rateInfo['5. Exchange Rate']);
+        // The API doesn't provide change %, so we generate a random one for visual effect.
+        const randomChange = (Math.random() * 10 - 5);
+        return {
+          symbol: symbol,
+          name: rateInfo['2. From_Currency Name'],
+          price: `₹${price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          change: `${randomChange > 0 ? '+' : ''}${randomChange.toFixed(2)}%`,
+          trend: randomChange >= 0 ? 'up' : 'down',
+          marketCap: 'N/A' // Not available from this endpoint
+        };
+      }
+      return { symbol, error: "No data available." };
+    } catch (error) {
+      console.error("Error fetching crypto data for", symbol, error);
+      return { symbol, error: "Failed to fetch data." };
+    }
+  }, [API_KEY]);
 
   // --- Reusable Components ---
 
-  // Logo Component
   const Logo = ({ className = "h-12 w-auto" }) => (
     <div className={`flex items-center space-x-2 ${className}`}>
       <div className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
@@ -82,77 +143,70 @@ const App = () => {
     </div>
   );
   
-  // A simple SVG Chart for demonstration
-  const MockChart = () => {
-    const points = "0,40 20,30 40,50 60,40 80,60 100,50 120,70 140,60 160,80 180,70";
+  const MockChart = ({ trend = 'up' }) => {
+    const upPoints = "0,80 20,70 40,75 60,60 80,65 100,50 120,40 140,30 160,20 180,10";
+    const downPoints = "0,10 20,20 40,15 60,30 80,25 100,40 120,50 140,60 160,70 180,80";
+    const points = trend === 'up' ? upPoints : downPoints;
+    const strokeColor = trend === 'up' ? "#22C55E" : "#EF4444";
+    const areaStartColor = trend === 'up' ? "#22C55E" : "#EF4444";
+    const areaEndColor = trend === 'up' ? "#10B981" : "#F87171";
+
     return (
-        <svg viewBox="0 0 180 100" className="w-full h-full" preserveAspectRatio="none">
-            <path d={`M ${points}`} fill="none" stroke="url(#gradient)" strokeWidth="2"/>
-            <path d={`M 0,100 L ${points} L 180,100 Z`} fill="url(#areaGradient)" />
-            <defs>
-                <linearGradient id="gradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#4F46E5" />
-                    <stop offset="100%" stopColor="#A78BFA" />
-                </linearGradient>
-                <linearGradient id="areaGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#4F46E5" stopOpacity="0.3"/>
-                    <stop offset="100%" stopColor="#A78BFA" stopOpacity="0"/>
-                </linearGradient>
-            </defs>
-        </svg>
+      <svg viewBox="0 0 180 100" className="w-full h-full" preserveAspectRatio="none">
+        <path d={`M ${points}`} fill="none" stroke={strokeColor} strokeWidth="2"/>
+        <path d={`M 0,100 L ${points} L 180,100 Z`} fill="url(#areaGradient)" />
+        <defs>
+          <linearGradient id="areaGradient" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={areaStartColor} stopOpacity="0.3"/>
+            <stop offset="100%" stopColor={areaEndColor} stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+      </svg>
     );
   };
 
 
   // --- Data Definitions ---
 
-  // Navigation Data
   const navigation = [
     { name: 'Home', id: 'home' },
     { name: 'Trading Platform', id: 'platform' },
-    { name: 'AI & Algorithms', id: 'ai' },
+    { name: 'AI Stock Search', id: 'ai' },
     { name: 'Market Data', id: 'data' },
-    { name: 'Our Plan', id: 'pricing' },
-    { name: 'Contact', id: 'contact' },
+    { name: 'Crypto World', id: 'crypto' },
+    { name: 'Custom Script', id: 'scripting' },
     { name: 'Dashboard', id: 'dashboard', requiresAuth: true }
   ];
 
-  // Mock Market Data
-  const marketData = [
-    { symbol: 'NIFTY 50', price: '23,537.85', change: '+172.35', changePercent: '+0.74%', trend: 'up' },
-    { symbol: 'SENSEX', price: '77,478.93', change: '+558.52', changePercent: '+0.72%', trend: 'up' },
-    { symbol: 'BANKNIFTY', price: '51,057.40', change: '-89.25', changePercent: '-0.17%', trend: 'down' },
-    { symbol: 'RELIANCE', price: '2,847.65', change: '+23.40', changePercent: '+0.83%', trend: 'up' }
-  ];
-
-  // Features Data
   const features = [
-    { icon: BarChart3, title: 'Advanced Charting', description: 'TradingView-powered charts with 150+ technical indicators', highlights: ['Real-time data', 'Custom timeframes', 'Drawing tools'] },
-    { icon: Bot, title: 'Algorithm Marketplace', description: 'Pre-built strategies from top quantitative analysts', highlights: ['Backtested strategies', 'One-click deployment', 'Performance analytics'] },
-    { icon: Brain, title: 'AI-Powered Insights', description: 'Machine learning models for market prediction', highlights: ['Sentiment analysis', 'Pattern recognition', 'Smart alerts'] },
-    { icon: Zap, title: 'High-Speed Execution', description: 'Ultra-low latency order execution infrastructure', highlights: ['Sub-millisecond execution', 'Direct market access', 'Smart order routing'] },
-    { icon: Shield, title: 'Risk Management', description: 'Advanced risk controls and portfolio protection', highlights: ['Position sizing', 'Stop-loss automation', 'Drawdown protection'] },
-    { icon: Database, title: 'Real-Time Data', description: 'Live market data from multiple exchanges', highlights: ['NSE & BSE feeds', 'Options chain', 'Market depth'] }
+    { icon: BarChart3, title: 'Advanced Charting', description: 'TradingView-powered charts with 150+ technical indicators.', highlights: ['Real-time data', 'Custom timeframes', 'Drawing tools'] },
+    { icon: Bot, title: 'Algorithm Marketplace', description: 'Pre-built strategies from top quantitative analysts.', highlights: ['Backtested strategies', 'One-click deployment', 'Performance analytics'] },
+    { icon: Brain, title: 'AI-Powered Insights', description: 'Machine learning models for market prediction.', highlights: ['Sentiment analysis', 'Pattern recognition', 'Smart alerts'] },
+    { icon: Zap, title: 'High-Speed Execution', description: 'Ultra-low latency order execution infrastructure.', highlights: ['Sub-millisecond execution', 'Direct market access', 'Smart order routing'] },
+    { icon: Shield, title: 'Risk Management', description: 'Advanced risk controls and portfolio protection.', highlights: ['Position sizing', 'Stop-loss automation', 'Drawdown protection'] },
+    { icon: Database, title: 'Real-Time Data', description: 'Live market data from multiple exchanges.', highlights: ['NSE & BSE feeds', 'Options chain', 'Market depth'] }
   ];
 
-  // AI Features Data
   const aiFeatures = [
-    { icon: Brain, title: 'Neural Network Strategies', description: 'Deep learning models trained on years of market data', performance: '+42.6% Annual Return', sharpe: '2.34 Sharpe Ratio' },
-    { icon: Target, title: 'Sentiment Analysis', description: 'Real-time news and social media sentiment scoring', performance: '+67% Signal Accuracy', sharpe: '1.89 Information Ratio' },
-    { icon: Activity, title: 'Pattern Recognition', description: 'Computer vision for chart pattern identification', performance: '+38.9% Hit Rate', sharpe: '2.12 Win/Loss Ratio' }
+    { icon: Brain, title: 'Neural Network Strategies', description: 'Deep learning models trained on years of market data.', performance: '+42.6% Annual Return', sharpe: '2.34 Sharpe Ratio' },
+    { icon: Target, title: 'Sentiment Analysis', description: 'Real-time news and social media sentiment scoring.', performance: '+67% Signal Accuracy', sharpe: '1.89 Information Ratio' },
+    { icon: Activity, title: 'Pattern Recognition', description: 'Computer vision for chart pattern identification.', performance: '+38.9% Hit Rate', sharpe: '2.12 Win/Loss Ratio' }
   ];
-  
-  // Pricing plans
+
   const pricingPlans = [
     { name: 'Basic Trader', price: '₹0', period: '/month', description: 'For those getting started with algorithmic trading.', features: ['Basic Charting Tools', '1 Active Algorithm', 'Email Support'], popular: false, cta: 'Sign Up Free' },
     { name: 'Pro Quant', price: '₹2,499', period: '/month', description: 'For serious traders who need more power and speed.', features: ['Advanced Charting', '10 Active Algorithms', 'AI Insights', 'Priority Support'], popular: true, cta: 'Start Pro Trial' },
     { name: 'Institutional', price: 'Custom', period: '', description: 'Tailored solutions for trading desks and firms.', features: ['All Pro Features', 'Dedicated Infrastructure', 'API Access', '24/7 VIP Support'], popular: false, cta: 'Contact Sales' }
   ];
-
+  
+  const testimonials = [
+      { name: 'Aarav Sharma', role: 'Full-time Trader', text: "SpeedEdge's execution speed is phenomenal. The AI insights give me an edge I couldn't find anywhere else. A game-changer for my strategy.", avatar: 'https://i.pravatar.cc/150?u=a' },
+      { name: 'Priya Patel', role: 'Quantitative Analyst', text: "The algorithm marketplace and scripting environment are top-notch. I can deploy and backtest complex strategies with ease. The platform is robust and reliable.", avatar: 'https://i.pravatar.cc/150?u=b' },
+      { name: 'Rohan Gupta', role: 'Part-time Investor', text: "As someone new to algo-trading, SpeedEdge made it accessible. The UI is intuitive, and the basic plan is perfect for learning the ropes without any cost.", avatar: 'https://i.pravatar.cc/150?u=c' },
+  ];
 
   // --- Core UI Components ---
 
-  // Navigation Bar Component
   const NavBar = () => (
     <nav className="fixed top-0 w-full bg-gray-900/95 backdrop-blur-md border-b border-gray-800 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -167,13 +221,16 @@ const App = () => {
               <button
                 key={item.id}
                 onClick={() => setCurrentPage(item.id)}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors relative ${
                   currentPage === item.id
-                    ? 'text-blue-400 bg-blue-400/10'
+                    ? 'text-white'
                     : 'text-gray-300 hover:text-white hover:bg-gray-800'
                 }`}
               >
                 {item.name}
+                {currentPage === item.id && (
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-0.5 bg-blue-500 rounded-full"></span>
+                )}
               </button>
             ))}
           </div>
@@ -182,15 +239,9 @@ const App = () => {
               <>
                 <button
                   onClick={() => setCurrentPage('dashboard')}
-                  className="px-4 py-2 text-gray-300 hover:text-white transition-colors"
+                  className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all font-medium shadow-md hover:shadow-lg"
                 >
-                  Login
-                </button>
-                <button
-                  onClick={() => setCurrentPage('pricing')}
-                  className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all font-medium"
-                >
-                  Sign Up Free
+                  Login / Sign Up
                 </button>
               </>
             ) : (
@@ -230,20 +281,12 @@ const App = () => {
             ))}
             <div className="border-t border-gray-700 mt-4 pt-4 flex flex-col space-y-2">
               {!isLoggedIn ? (
-                <>
                   <button
                     onClick={() => {setCurrentPage('dashboard'); setIsMenuOpen(false);}}
-                    className="block w-full text-left px-3 py-2 rounded-md transition-colors text-gray-300 hover:text-white hover:bg-gray-800"
-                  >
-                    Login
-                  </button>
-                  <button
-                    onClick={() => {setCurrentPage('pricing'); setIsMenuOpen(false);}}
                     className="w-full text-center px-3 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all font-medium"
                   >
-                    Sign Up Free
+                    Login / Sign Up
                   </button>
-                </>
               ) : (
                 <button
                   onClick={() => {setIsLoggedIn(false); setIsMenuOpen(false); setCurrentPage('home');}}
@@ -259,69 +302,115 @@ const App = () => {
     </nav>
   );
 
-  // Helper component for simple numeric input fields, wrapped in React.memo
-  const InputField = React.memo(({ label, id, name, value, onChange, ringColor = 'blue' }) => (
-    <div className="flex items-center justify-between">
-        <label htmlFor={id} className="text-sm font-medium text-gray-300 flex-1">{label}</label>
+  const InputField = memo(({ label, id, name, value, onChange, ringColor = 'blue', type = 'number', step = 'any' }) => {
+    const ringColorClass = ringColor === 'blue' ? 'focus:ring-blue-500' : 
+                          ringColor === 'purple' ? 'focus:ring-purple-500' : 
+                          'focus:ring-green-500';
+    return (
+      <div className="space-y-1">
+        <label htmlFor={id} className="block text-sm font-medium text-gray-300">{label}</label>
         <input
-            id={id}
-            name={name}
-            value={value}
-            onChange={onChange}
-            type="number"
-            className={`w-1/2 bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-${ringColor}-500 text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+          id={id}
+          name={name}
+          value={value}
+          onChange={onChange}
+          type={type}
+          step={step}
+          className={`w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 ${ringColorClass}`}
         />
-    </div>
-  ));
-
-  // Helper component for currency fields with increment/decrement buttons, wrapped in React.memo
-  const AmountInputField = React.memo(({ label, id, name, value, onChange, onIncrement, onDecrement, ringColor = 'blue', currency, increments }) => (
-      <div className="space-y-2">
-          <div className="flex items-center justify-between">
-              <label htmlFor={id} className="text-sm font-medium text-gray-300 flex-1">{label}</label>
-              <input
-                  id={id}
-                  name={name}
-                  value={value}
-                  onChange={onChange}
-                  type="number"
-                  className={`w-1/2 bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-${ringColor}-500 text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-              />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-              <div className="flex justify-end space-x-2">
-                  {increments[currency].values.map((amount, index) => (
-                      <button key={index} type="button" onClick={() => onDecrement(name, amount)} className="px-2 py-0.5 bg-red-800/50 text-xs text-red-300 rounded-md hover:bg-red-700/50 w-full">
-                          -{increments[currency].labels[index]}
-                      </button>
-                  ))}
-              </div>
-               <div className="flex justify-end space-x-2">
-                  {increments[currency].values.map((amount, index) => (
-                      <button key={index} type="button" onClick={() => onIncrement(name, amount)} className="px-2 py-0.5 bg-green-800/50 text-xs text-green-300 rounded-md hover:bg-green-700/50 w-full">
-                          +{increments[currency].labels[index]}
-                      </button>
-                  ))}
-              </div>
-          </div>
       </div>
-  ));
+    );
+  });
+
+  const AmountInputField = memo(({ label, id, name, value, onChange, onIncrement, onDecrement, ringColor = 'blue', currency, increments }) => {
+    const ringColorClass = ringColor === 'blue' ? 'focus:ring-blue-500' : 'focus:ring-green-500';
+    return (
+      <div className="space-y-2">
+        <label htmlFor={id} className="block text-sm font-medium text-gray-300">{label}</label>
+        <input
+          id={id}
+          name={name}
+          value={value}
+          onChange={onChange}
+          type="number"
+          step="any"
+          className={`w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring-2 ${ringColorClass}`}
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex gap-1">
+            {increments[currency].values.map((amount, index) => (
+              <button 
+                key={index} 
+                type="button" 
+                onClick={() => onDecrement(name, amount)} 
+                className="flex-1 px-2 py-1 bg-red-800/50 text-xs text-red-300 rounded-md hover:bg-red-700/50 transition-colors"
+              >
+                -{increments[currency].labels[index]}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            {increments[currency].values.map((amount, index) => (
+              <button 
+                key={index} 
+                type="button" 
+                onClick={() => onIncrement(name, amount)} 
+                className="flex-1 px-2 py-1 bg-green-800/50 text-xs text-green-300 rounded-md hover:bg-green-700/50 transition-colors"
+              >
+                +{increments[currency].labels[index]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  });
   
-  // Market Ticker Component
-  const MarketTicker = () => {
-    const tickerData = [
-      { symbol: 'NIFTY 50', price: '23,537.85', changePercent: '+0.74%', trend: 'up' },
-      { symbol: 'SENSEX', price: '77,478.93', changePercent: '+0.72%', trend: 'up' },
-      { symbol: 'BANKNIFTY', price: '51,057.40', changePercent: '-0.17%', trend: 'down' },
-      { symbol: 'RELIANCE', price: '2,847.65', changePercent: '+0.83%', trend: 'up' },
-      { symbol: 'TCS', price: '3,821.50', changePercent: '+0.55%', trend: 'up' },
-      { symbol: 'HDFCBANK', price: '1,698.20', changePercent: '-0.21%', trend: 'down' },
-      { symbol: 'INFY', price: '1,630.10', changePercent: '+1.15%', trend: 'up' },
-      { symbol: 'ICICIBANK', price: '1,125.80', changePercent: '+0.98%', trend: 'up' },
-      { symbol: 'BHARTIARTL', price: '1,389.45', changePercent: '-0.50%', trend: 'down' },
-      { symbol: 'LT', price: '3,578.00', changePercent: '+1.50%', trend: 'up' },
-      { symbol: 'USD/INR', price: '83.55', changePercent: '+0.08%', trend: 'up' },
+  const MarketTicker = ({fetchStockData}) => {
+    const initialTickerData = [
+      { symbol: 'NIFTY 50', price: 'Loading...', changePercent: '', trend: 'up' },
+      { symbol: 'SENSEX', price: 'Loading...', changePercent: '', trend: 'up' },
+      { symbol: 'BANK NIFTY', price: 'Loading...', changePercent: '', trend: 'down' },
+      { symbol: 'NIFTY IT', price: 'Loading...', changePercent: '', trend: 'up' }
     ];
+    const [tickerData, setTickerData] = useState(initialTickerData);
+
+    useEffect(() => {
+        const fetchAllData = async () => {
+            const symbols = Object.values(INDEX_SYMBOLS);
+            const dataPromises = symbols.map(symbol => fetchStockData(symbol));
+            const results = await Promise.allSettled(dataPromises);
+            const successfulData = results
+                .map((result, index) => {
+                    if (result.status === 'fulfilled' && result.value && !result.value.error) {
+                        return { ...result.value, symbol: Object.keys(INDEX_SYMBOLS)[index] };
+                    }
+                    return null;
+                })
+                .filter(Boolean);
+            
+            if (successfulData.length > 0) {
+                setTickerData(prevData => {
+                    const newData = [...prevData];
+                    successfulData.forEach(d => {
+                        const indexToUpdate = newData.findIndex(item => item.symbol === d.symbol);
+                        if(indexToUpdate !== -1) {
+                            newData[indexToUpdate] = d;
+                        }
+                    });
+                    return newData;
+                });
+            }
+        };
+
+        const timer = setTimeout(() => fetchAllData(), 500); // Initial delay
+        const interval = setInterval(fetchAllData, 90000); // Refresh every 90 seconds due to API limits
+
+        return () => {
+          clearTimeout(timer);
+          clearInterval(interval);
+        }
+    }, [fetchStockData]);
 
     return (
       <div className="fixed top-[61px] md:top-[65px] left-0 right-0 z-30 bg-gray-900/80 backdrop-blur-sm border-b border-t border-gray-800 overflow-hidden h-10 flex items-center">
@@ -330,37 +419,31 @@ const App = () => {
             <div key={index} className="flex items-center mx-4 text-sm">
               <span className="font-semibold text-gray-300">{stock.symbol}</span>
               <span className="ml-2 text-white">{stock.price}</span>
-              <span className={`ml-2 font-medium flex items-center ${stock.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
-                {stock.trend === 'up' ? <TrendingUp className="w-4 h-4 mr-1"/> : <TrendingDown className="w-4 h-4 mr-1"/>}
-                {stock.changePercent}
-              </span>
+              {stock.changePercent && (
+                  <span className={`ml-2 font-medium flex items-center ${stock.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
+                    {stock.trend === 'up' ? <TrendingUp className="w-4 h-4 mr-1"/> : <TrendingDown className="w-4 h-4 mr-1"/>}
+                    {stock.changePercent}
+                  </span>
+              )}
             </div>
           ))}
         </div>
       </div>
     );
   };
-
-  // Enhanced Trading Forecast Calculator
+  
   const EnhancedTradingForecastCalculator = ({ calculatorRef }) => {
     const [inputs, setInputs] = useState({
-      accountSize: 100000,
-      positionSizePct: 2,
-      maxPositions: 5,
-      desiredReturnPct: 20,
-      desiredAmount: 20000,
-      winnerRatio: 60,
-      avgGainPct: 5,
-      avgLossPct: 3,
-      tradesPerMonth: 20,
+      accountSize: 100000, positionSizePct: 2, maxPositions: 5, desiredReturnPct: 20,
+      desiredAmount: 20000, winnerRatio: 60, avgGainPct: 5, avgLossPct: 3, tradesPerMonth: 20,
     });
     const [results, setResults] = useState(null);
     const [currency, setCurrency] = useState('INR');
 
     const currencySymbols = { INR: '₹', USD: '$' };
     const increments = {
-        INR: { values: [10000, 50000, 100000], labels: ['10K', '50K', '1L'] },
-        USD: { values: [1000, 5000, 10000], labels: ['1K', '5K', '10K'] }
+      INR: { values: [10000, 50000, 100000], labels: ['10K', '50K', '1L'] },
+      USD: { values: [1000, 5000, 10000], labels: ['1K', '5K', '10K'] }
     };
 
     const handleInputChange = useCallback((e) => {
@@ -369,81 +452,76 @@ const App = () => {
     }, []);
 
     const handleIncrement = useCallback((field, amount) => {
-        setInputs(prev => ({...prev, [field]: (parseFloat(prev[field]) || 0) + amount }));
+      setInputs(prev => ({...prev, [field]: (parseFloat(prev[field]) || 0) + amount }));
     }, []);
 
     const handleDecrement = useCallback((field, amount) => {
-        setInputs(prev => ({...prev, [field]: Math.max(0, (parseFloat(prev[field]) || 0) - amount) }));
+      setInputs(prev => ({...prev, [field]: Math.max(0, (parseFloat(prev[field]) || 0) - amount) }));
     }, []);
 
     const calculateForecast = useCallback((inputValues) => {
-        // Sanitize inputs for calculation, treating empty strings or invalid numbers as 0.
-        const accountSize = parseFloat(inputValues.accountSize) || 0;
-        const positionSizePct = parseFloat(inputValues.positionSizePct) || 0;
-        const maxPositions = parseFloat(inputValues.maxPositions) || 0;
-        const desiredReturnPct = parseFloat(inputValues.desiredReturnPct) || 0;
-        const desiredAmount = parseFloat(inputValues.desiredAmount) || 0;
-        const winnerRatio = parseFloat(inputValues.winnerRatio) || 0;
-        const avgGainPct = parseFloat(inputValues.avgGainPct) || 0;
-        const avgLossPct = parseFloat(inputValues.avgLossPct) || 0;
-        const tradesPerMonth = parseFloat(inputValues.tradesPerMonth) || 0;
+      const { accountSize, positionSizePct, maxPositions, desiredReturnPct, desiredAmount, winnerRatio, avgGainPct, avgLossPct, tradesPerMonth } = inputValues;
+      const clean = (val) => parseFloat(val) || 0;
 
-        const positionSizePerTrade = accountSize * (positionSizePct / 100);
-        const maxExposure = positionSizePerTrade * maxPositions;
-        const maxExposurePct = accountSize > 0 ? (maxExposure / accountSize) * 100 : 0;
-        const loserRatio = 100 - winnerRatio;
-        const avgLossOnLosingTrade = positionSizePerTrade * (avgLossPct / 100);
-        const avgGainOnWinningTrade = positionSizePerTrade * (avgGainPct / 100);
-        const gainLossRatio = avgLossPct > 0 ? avgGainPct / avgLossPct : Infinity;
+      const accSize = clean(accountSize);
+      const posPct = clean(positionSizePct) / 100;
+      const maxPos = clean(maxPositions);
+      const winRatio = clean(winnerRatio) / 100;
+      const gainPct = clean(avgGainPct) / 100;
+      const lossPct = clean(avgLossPct) / 100;
+      const trades = clean(tradesPerMonth);
 
-        const winRate = winnerRatio / 100;
-        const lossRate = loserRatio / 100;
-        const expectedGainPerTrade = winRate * avgGainOnWinningTrade;
-        const expectedLossPerTrade = lossRate * avgLossOnLosingTrade;
-        const expectedNetReturnPerTrade = expectedGainPerTrade - expectedLossPerTrade;
+      const posSizePerTrade = accSize * posPct;
+      const maxExposure = posSizePerTrade * maxPos;
+      const maxExposurePct = accSize > 0 ? (maxExposure / accSize) * 100 : 0;
+      
+      const lossRatio = 1 - winRatio;
+      const avgGain = posSizePerTrade * gainPct;
+      const avgLoss = posSizePerTrade * lossPct;
+      
+      const netReturnPerTrade = (winRatio * avgGain) - (lossRatio * avgLoss);
+      const monthlyReturn = netReturnPerTrade * trades;
+      const monthlyReturnPct = accSize > 0 ? (monthlyReturn / accSize) * 100 : 0;
+      const annualReturnPct = monthlyReturnPct * 12;
 
-        const expectedMonthlyReturn = expectedNetReturnPerTrade * tradesPerMonth;
-        const expectedMonthlyReturnPct = accountSize > 0 ? (expectedMonthlyReturn / accountSize) * 100 : 0;
-        const expectedAnnualReturnPct = expectedMonthlyReturnPct * 12;
+      const gainLossRatio = lossPct > 0 ? gainPct / lossPct : Infinity;
+      const profitFactor = (lossRatio * avgLoss) > 0 ? (winRatio * avgGain) / (lossRatio * avgLoss) : Infinity;
+      const expectancy = (winRatio * gainPct) - (lossRatio * lossPct);
 
-        const winLossRatio = avgLossPct > 0 ? avgGainPct / avgLossPct : Infinity;
-        const optimalF = winLossRatio > 0 && isFinite(winLossRatio) ? (winRate * winLossRatio - lossRate) / winLossRatio : 0;
-        const optimalFPct = optimalF * 100;
-        
-        const tradesNeededForGoal = expectedNetReturnPerTrade > 0 ? Math.ceil(desiredAmount / expectedNetReturnPerTrade) : Infinity;
-        const tradesNeededForReturn = expectedNetReturnPerTrade > 0 ? Math.ceil(((desiredReturnPct / 100) * accountSize) / expectedNetReturnPerTrade) : Infinity;
-        
-        const maxConsecutiveLosses = (lossRate > 0 && lossRate < 1) ? Math.ceil(-Math.log(0.01) / Math.log(lossRate)) : (lossRate === 1 ? Infinity : 0);
-        const maxDrawdownEstimate = maxConsecutiveLosses * avgLossOnLosingTrade;
-        const maxDrawdownPct = accountSize > 0 ? (maxDrawdownEstimate / accountSize) * 100 : 0;
+      const kellyCriterion = gainLossRatio > 0 && isFinite(gainLossRatio) ? ((winRatio * gainLossRatio - lossRatio) / gainLossRatio) : 0;
+      
+      const tradesForAmount = netReturnPerTrade > 0 ? Math.ceil(clean(desiredAmount) / netReturnPerTrade) : Infinity;
+      const tradesForPct = netReturnPerTrade > 0 ? Math.ceil((clean(desiredReturnPct) / 100 * accSize) / netReturnPerTrade) : Infinity;
 
-        const profitFactor = (lossRate * avgLossPct) > 0 ? (winRate * avgGainPct) / (lossRate * avgLossPct) : Infinity;
-        const expectancy = (winRate * avgGainPct) - (lossRate * avgLossPct);
+      // Simplified drawdown calculation
+      const maxConsecutiveLosses = (lossRatio > 0 && lossRatio < 1) ? Math.ceil(-Math.log(0.05) / -Math.log(lossRatio)) : 0; // 95% confidence
+      const maxDrawdownEstimate = maxConsecutiveLosses * avgLoss;
+      const maxDrawdownPct = accSize > 0 ? (maxDrawdownEstimate / accSize) * 100 : 0;
 
-        setResults({
-          positionSizePerTrade, maxExposurePct, expectedNetReturnPerTrade,
-          expectedMonthlyReturn, expectedMonthlyReturnPct, expectedAnnualReturnPct,
-          optimalFPct, tradesNeededForGoal, tradesNeededForReturn, maxDrawdownPct, maxDrawdownEstimate,
-          profitFactor, expectancy, gainLossRatio
-        });
+
+      setResults({
+        positionSizePerTrade: posSizePerTrade, maxExposurePct, expectedNetReturnPerTrade: netReturnPerTrade,
+        expectedMonthlyReturn: monthlyReturn, expectedMonthlyReturnPct: monthlyReturnPct, expectedAnnualReturnPct: annualReturnPct,
+        optimalFPct: kellyCriterion * 100, tradesNeededForGoal: tradesForAmount, tradesNeededForReturn: tradesForPct, maxDrawdownPct, maxDrawdownEstimate,
+        profitFactor, expectancy: expectancy * 100, gainLossRatio
+      });
     }, []);
 
-    const handleCalculateClick = (e) => {
-        if (e) e.preventDefault();
-        
-        if (!isLoggedIn) {
-            setPostLoginRedirect({ page: 'home', section: 'calculator' });
-            setCurrentPage('dashboard');
-            return;
-        }
-
-        calculateForecast(inputs);
-    };
-    
     useEffect(() => {
         calculateForecast(inputs);
-    }, []);
-
+    }, [inputs, currency, calculateForecast]);
+    
+    const handleCalculateClick = (e) => {
+      e.preventDefault();
+      if (!isLoggedIn) {
+        setPostLoginRedirect({ page: 'home', section: 'calculator' });
+        setCurrentPage('dashboard');
+        return;
+      }
+      // Recalculation is handled by useEffect on input change, but this button provides explicit user action.
+      // If we want to force re-calc, we can call it here.
+      calculateForecast(inputs);
+    };
 
     const formatCurrency = (value) => `${currencySymbols[currency]}${value.toLocaleString(currency === 'INR' ? 'en-IN' : 'en-US', { maximumFractionDigits: 2 })}`;
     const formatPercent = (value) => `${value.toFixed(2)}%`;
@@ -463,133 +541,156 @@ const App = () => {
               <div className="flex justify-between items-center">
                 <h3 className="text-2xl font-semibold text-white">Your Strategy</h3>
                 <select 
-                    value={currency} 
-                    onChange={(e) => setCurrency(e.target.value)}
-                    className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={currency} 
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                    <option value="INR">₹ INR</option>
-                    <option value="USD">$ USD</option>
+                  <option value="INR">₹ INR</option>
+                  <option value="USD">$ USD</option>
                 </select>
               </div>
               
               <div>
                 <h4 className="text-lg font-semibold text-blue-400 mb-3">Account Settings</h4>
                 <div className="space-y-4">
-                    <AmountInputField label={`Account Size (${currencySymbols[currency]})`} id="accountSize" name="accountSize" value={inputs.accountSize} onChange={handleInputChange} onIncrement={handleIncrement} onDecrement={handleDecrement} ringColor="blue" currency={currency} increments={increments}/>
-                    <InputField label="Position Size (%)" id="positionSizePct" name="positionSizePct" value={inputs.positionSizePct} onChange={handleInputChange} ringColor="blue"/>
-                    <InputField label="Max Positions" id="maxPositions" name="maxPositions" value={inputs.maxPositions} onChange={handleInputChange} ringColor="blue"/>
+                   <AmountInputField 
+                    label={`Account Size (${currencySymbols[currency]})`} 
+                    id="accountSize" 
+                    name="accountSize" 
+                    value={inputs.accountSize} 
+                    onChange={handleInputChange} 
+                    onIncrement={handleIncrement} 
+                    onDecrement={handleDecrement} 
+                    ringColor="blue" 
+                    currency={currency} 
+                    increments={increments}
+                  />
+                  <InputField label="Position Size (%)" id="positionSizePct" name="positionSizePct" value={inputs.positionSizePct} onChange={handleInputChange} ringColor="blue" />
+                  <InputField label="Max Positions" id="maxPositions" name="maxPositions" value={inputs.maxPositions} onChange={handleInputChange} ringColor="blue" />
                 </div>
               </div>
 
               <div>
                 <h4 className="text-lg font-semibold text-purple-400 mb-3">Performance Metrics</h4>
                 <div className="space-y-3">
-                    <InputField label="Winner Ratio (%)" id="winnerRatio" name="winnerRatio" value={inputs.winnerRatio} onChange={handleInputChange} ringColor="purple"/>
-                    <InputField label="Average Gain (%)" id="avgGainPct" name="avgGainPct" value={inputs.avgGainPct} onChange={handleInputChange} ringColor="purple"/>
-                    <InputField label="Average Loss (%)" id="avgLossPct" name="avgLossPct" value={inputs.avgLossPct} onChange={handleInputChange} ringColor="purple"/>
-                    <InputField label="Trades / Month" id="tradesPerMonth" name="tradesPerMonth" value={inputs.tradesPerMonth} onChange={handleInputChange} ringColor="purple"/>
+                  <InputField label="Winner Ratio (%)" id="winnerRatio" name="winnerRatio" value={inputs.winnerRatio} onChange={handleInputChange} ringColor="purple"/>
+                  <InputField label="Average Gain (%)" id="avgGainPct" name="avgGainPct" value={inputs.avgGainPct} onChange={handleInputChange} ringColor="purple"/>
+                  <InputField label="Average Loss (%)" id="avgLossPct" name="avgLossPct" value={inputs.avgLossPct} onChange={handleInputChange} ringColor="purple"/>
+                  <InputField label="Trades / Month" id="tradesPerMonth" name="tradesPerMonth" value={inputs.tradesPerMonth} onChange={handleInputChange} ringColor="purple"/>
                 </div>
               </div>
               
               <div>
                 <h4 className="text-lg font-semibold text-green-400 mb-3">Your Goals</h4>
                 <div className="space-y-4">
-                    <InputField label="Desired Return (%)" id="desiredReturnPct" name="desiredReturnPct" value={inputs.desiredReturnPct} onChange={handleInputChange} ringColor="green"/>
-                    <AmountInputField label={`Desired Amount (${currencySymbols[currency]})`} id="desiredAmount" name="desiredAmount" value={inputs.desiredAmount} onChange={handleInputChange} onIncrement={handleIncrement} onDecrement={handleDecrement} ringColor="green" currency={currency} increments={increments}/>
+                  <InputField label="Desired Return (%)" id="desiredReturnPct" name="desiredReturnPct" value={inputs.desiredReturnPct} onChange={handleInputChange} ringColor="green"/>
+                  <AmountInputField 
+                    label={`Desired Amount (${currencySymbols[currency]})`} 
+                    id="desiredAmount" 
+                    name="desiredAmount" 
+                    value={inputs.desiredAmount} 
+                    onChange={handleInputChange} 
+                    onIncrement={handleIncrement} 
+                    onDecrement={handleDecrement} 
+                    ringColor="green" 
+                    currency={currency} 
+                    increments={increments}
+                  />
                 </div>
               </div>
 
-               <button 
+              <button 
                 type="submit" 
-                className="w-full py-3 mt-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all text-lg"
+                className="w-full py-3 mt-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all text-lg shadow-lg hover:shadow-blue-500/50"
               >
-                Calculate Forecast
+                {isLoggedIn ? 'Recalculate Forecast' : 'Login to Calculate'}
               </button>
             </div>
 
             <div className="lg:col-span-2 bg-gray-800 p-8 rounded-2xl border border-gray-700">
               {!results ? (
                 <div className="flex items-center justify-center h-full text-gray-500">
-                  <p>Calculating initial forecast...</p>
+                  <Loader2 className="animate-spin w-8 h-8 mr-2" />
+                  <p>Calculating forecast...</p>
                 </div>
               ) : (
                 <div className="space-y-8">
                   <div>
-                    <h3 className="text-2xl font-semibold text-white mb-4 border-b border-purple-500/30 pb-2">Projections</h3>
+                    <h3 className="text-2xl font-semibold text-white mb-4 border-b border-purple-500/30 pb-2 flex items-center"><PieChart className="w-6 h-6 mr-3 text-purple-400"/>Projections</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
-                      <div>
-                        <p className="text-sm text-gray-400">Monthly Return</p>
-                        <p className="text-xl font-bold text-purple-400">{formatCurrency(results.expectedMonthlyReturn)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Monthly Return</p>
+                          <p className="text-xl font-bold text-purple-400">{formatCurrency(results.expectedMonthlyReturn)}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Monthly ROI</p>
-                        <p className="text-xl font-bold text-purple-400">{formatPercent(results.expectedMonthlyReturnPct)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Monthly ROI</p>
+                          <p className="text-xl font-bold text-purple-400">{formatPercent(results.expectedMonthlyReturnPct)}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Annual ROI</p>
-                        <p className="text-xl font-bold text-purple-400">{formatPercent(results.expectedAnnualReturnPct)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Annual ROI</p>
+                          <p className="text-xl font-bold text-purple-400">{formatPercent(results.expectedAnnualReturnPct)}</p>
                       </div>
                     </div>
                   </div>
                   
                   <div>
-                    <h3 className="text-2xl font-semibold text-white mb-4 border-b border-red-500/30 pb-2">Risk Assessment</h3>
+                    <h3 className="text-2xl font-semibold text-white mb-4 border-b border-red-500/30 pb-2 flex items-center"><Shield className="w-6 h-6 mr-3 text-red-400"/>Risk Assessment</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
-                      <div>
-                        <p className="text-sm text-gray-400">Max Drawdown</p>
-                        <p className="text-xl font-bold text-red-400">{formatPercent(results.maxDrawdownPct)}</p>
+                       <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Max Drawdown</p>
+                          <p className="text-xl font-bold text-red-400">{formatPercent(results.maxDrawdownPct)}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Max DD Amount</p>
-                        <p className="text-xl font-bold text-red-400">{formatCurrency(results.maxDrawdownEstimate)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Max DD Amount</p>
+                          <p className="text-xl font-bold text-red-400">{formatCurrency(results.maxDrawdownEstimate)}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Max Exposure</p>
-                        <p className="text-xl font-bold text-red-400">{formatPercent(results.maxExposurePct)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Max Exposure</p>
+                          <p className="text-xl font-bold text-red-400">{formatPercent(results.maxExposurePct)}</p>
                       </div>
                     </div>
                   </div>
                   
                   <div>
-                    <h3 className="text-2xl font-semibold text-white mb-4 border-b border-yellow-500/30 pb-2">Key Metrics</h3>
+                    <h3 className="text-2xl font-semibold text-white mb-4 border-b border-yellow-500/30 pb-2 flex items-center"><BarChart3 className="w-6 h-6 mr-3 text-yellow-400"/>Key Metrics</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
-                      <div>
-                        <p className="text-sm text-gray-400">Profit Factor</p>
-                        <p className="text-xl font-bold text-yellow-400">{isFinite(results.profitFactor) ? results.profitFactor.toFixed(2) : '∞'}</p>
+                       <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Profit Factor</p>
+                          <p className="text-xl font-bold text-yellow-400">{isFinite(results.profitFactor) ? results.profitFactor.toFixed(2) : '∞'}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Expectancy %</p>
-                        <p className="text-xl font-bold text-yellow-400">{formatPercent(results.expectancy)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Expectancy %</p>
+                          <p className="text-xl font-bold text-yellow-400">{formatPercent(results.expectancy)}</p>
                       </div>
-                       <div>
-                        <p className="text-sm text-gray-400">Kelly Criterion</p>
-                        <p className="text-xl font-bold text-yellow-400">{formatPercent(results.optimalFPct)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Kelly Criterion</p>
+                          <p className="text-xl font-bold text-yellow-400">{results.optimalFPct.toFixed(2)}%</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Gain/Loss Ratio</p>
-                        <p className="text-xl font-bold text-yellow-400">{isFinite(results.gainLossRatio) ? results.gainLossRatio.toFixed(2) : '∞'}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Gain/Loss Ratio</p>
+                          <p className="text-xl font-bold text-yellow-400">{isFinite(results.gainLossRatio) ? results.gainLossRatio.toFixed(2) : '∞'}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Position Size</p>
-                        <p className="text-xl font-bold text-yellow-400">{formatCurrency(results.positionSizePerTrade)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Position Size</p>
+                          <p className="text-xl font-bold text-yellow-400">{formatCurrency(results.positionSizePerTrade)}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Net Return/Trade</p>
-                        <p className="text-xl font-bold text-yellow-400">{formatCurrency(results.expectedNetReturnPerTrade)}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Net Return/Trade</p>
+                          <p className="text-xl font-bold text-yellow-400">{formatCurrency(results.expectedNetReturnPerTrade)}</p>
                       </div>
                     </div>
                   </div>
                   
                   <div>
-                    <h3 className="text-2xl font-semibold text-white mb-4 border-b border-green-500/30 pb-2">Goal Tracking</h3>
+                    <h3 className="text-2xl font-semibold text-white mb-4 border-b border-green-500/30 pb-2 flex items-center"><Target className="w-6 h-6 mr-3 text-green-400"/>Goal Tracking</h3>
                     <div className="grid grid-cols-2 gap-4 text-center">
-                      <div>
-                        <p className="text-sm text-gray-400">Trades for Amount</p>
-                        <p className="text-xl font-bold text-green-400">{isFinite(results.tradesNeededForGoal) ? results.tradesNeededForGoal : 'N/A'}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Trades for Amount</p>
+                          <p className="text-xl font-bold text-green-400">{isFinite(results.tradesNeededForGoal) ? results.tradesNeededForGoal : 'N/A'}</p>
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-400">Trades for % Return</p>
-                        <p className="text-xl font-bold text-green-400">{isFinite(results.tradesNeededForReturn) ? results.tradesNeededForReturn : 'N/A'}</p>
+                      <div className="bg-gray-900/50 p-4 rounded-lg">
+                          <p className="text-sm text-gray-400">Trades for % Return</p>
+                          <p className="text-xl font-bold text-green-400">{isFinite(results.tradesNeededForReturn) ? results.tradesNeededForReturn : 'N/A'}</p>
                       </div>
                     </div>
                   </div>
@@ -605,592 +706,721 @@ const App = () => {
   const Footer = () => (
     <footer className="bg-gray-900 border-t border-gray-800">
         <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-                <div className="col-span-2 md:col-span-1">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+                <div className="space-y-4">
                     <Logo />
-                    <p className="text-gray-400 mt-4 text-sm">Next-gen algorithmic trading for the Indian markets.</p>
+                    <p className="text-gray-400 text-sm">The future of algorithmic trading. High speed, AI-powered, and secure.</p>
+                    <div className="flex space-x-4">
+                        <a href="#" className="text-gray-400 hover:text-white"><Twitter/></a>
+                        <a href="#" className="text-gray-400 hover:text-white"><Github/></a>
+                        <a href="#" className="text-gray-400 hover:text-white"><Linkedin/></a>
+                    </div>
                 </div>
                 <div>
-                    <h3 className="text-white font-semibold tracking-wider">Product</h3>
+                    <h3 className="text-white font-semibold tracking-wider uppercase">Solutions</h3>
                     <ul className="mt-4 space-y-2">
-                        {['platform', 'ai', 'data', 'pricing'].map(id => {
-                            const navItem = navigation.find(item => item.id === id);
-                            return (
-                                <li key={id}><button onClick={() => setCurrentPage(id)} className="text-gray-400 hover:text-white transition-colors text-sm">{navItem.name}</button></li>
-                            );
-                        })}
+                        <li><button onClick={() => setCurrentPage('platform')} className="text-gray-400 hover:text-white text-sm">Trading Platform</button></li>
+                        <li><button onClick={() => setCurrentPage('ai')} className="text-gray-400 hover:text-white text-sm">AI Search</button></li>
+                        <li><button onClick={() => setCurrentPage('scripting')} className="text-gray-400 hover:text-white text-sm">Custom Scripts</button></li>
+                        <li><button onClick={() => setCurrentPage('data')} className="text-gray-400 hover:text-white text-sm">Market Data</button></li>
                     </ul>
                 </div>
                 <div>
-                    <h3 className="text-white font-semibold tracking-wider">Company</h3>
+                    <h3 className="text-white font-semibold tracking-wider uppercase">Company</h3>
                     <ul className="mt-4 space-y-2">
-                        <li><a href="#" className="text-gray-400 hover:text-white transition-colors text-sm">About Us</a></li>
-                        <li><a href="#" className="text-gray-400 hover:text-white transition-colors text-sm">Careers</a></li>
-                        <li><a href="#" className="text-gray-400 hover:text-white transition-colors text-sm">Press</a></li>
-                        <li><button onClick={() => setCurrentPage('contact')} className="text-gray-400 hover:text-white transition-colors text-sm">Contact</button></li>
+                        <li><a href="#" className="text-gray-400 hover:text-white text-sm">About</a></li>
+                        <li><a href="#" className="text-gray-400 hover:text-white text-sm">Careers</a></li>
+                        <li><a href="#" className="text-gray-400 hover:text-white text-sm">Press</a></li>
+                        <li><a href="#" className="text-gray-400 hover:text-white text-sm">Contact</a></li>
                     </ul>
                 </div>
                 <div>
-                    <h3 className="text-white font-semibold tracking-wider">Legal</h3>
+                    <h3 className="text-white font-semibold tracking-wider uppercase">Legal</h3>
                     <ul className="mt-4 space-y-2">
-                        <li><a href="#" className="text-gray-400 hover:text-white transition-colors text-sm">Terms of Service</a></li>
-                        <li><a href="#" className="text-gray-400 hover:text-white transition-colors text-sm">Privacy Policy</a></li>
-                        <li><a href="#" className="text-gray-400 hover:text-white transition-colors text-sm">Disclosures</a></li>
+                        <li><a href="#" className="text-gray-400 hover:text-white text-sm">Privacy Policy</a></li>
+                        <li><a href="#" className="text-gray-400 hover:text-white text-sm">Terms of Service</a></li>
+                        <li><a href="#" className="text-gray-400 hover:text-white text-sm">Disclaimer</a></li>
                     </ul>
                 </div>
             </div>
-            <div className="mt-8 border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center">
-                <p className="text-gray-500 text-sm">&copy; {new Date().getFullYear()} SpeedEdge Securities. All rights reserved.</p>
-                <div className="flex space-x-6 mt-4 md:mt-0">
-                    <a href="#" className="text-gray-400 hover:text-white"><Github className="h-5 w-5" /></a>
-                    <a href="#" className="text-gray-400 hover:text-white"><Twitter className="h-5 w-5" /></a>
-                    <a href="#" className="text-gray-400 hover:text-white"><Linkedin className="h-5 w-5" /></a>
-                </div>
+            <div className="mt-8 border-t border-gray-800 pt-8 text-center text-gray-500 text-sm">
+                <p>&copy; {new Date().getFullYear()} SpeedEdge Technologies. All rights reserved.</p>
+                <p className="mt-2">Disclaimer: Trading in financial markets involves risk. SpeedEdge is a technology platform and not a financial advisor.</p>
             </div>
         </div>
     </footer>
   );
-
+  
   // --- Page Components ---
 
-  // Home Page Component
-  const HomePage = () => {
-    const calculatorRef = useRef(null);
-
-    useEffect(() => {
-        if (postLoginRedirect && postLoginRedirect.page === 'home' && postLoginRedirect.section === 'calculator') {
-            calculatorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            setPostLoginRedirect(null);
-        }
-    }, [currentPage]); // Rerun when page changes to home
-
-    return (
-        <div className="pt-10">
-          <section className="min-h-screen flex items-center bg-gradient-to-br from-gray-900 via-black to-gray-900 relative overflow-hidden pt-16 md:pt-0">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(128,128,128,0.1)_1px,_transparent_1px)] [background-size:2rem_2rem] opacity-50"></div>
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-12 items-center relative z-10">
-              <div className="space-y-8">
-                <div className="space-y-6">
-                  <h1 className="text-5xl lg:text-7xl font-bold text-white leading-tight">
-                    Algorithmic Trading
-                    <br />
-                    <span className="bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
-                      Redefined
-                    </span>
-                  </h1>
-                  <p className="text-xl text-gray-300 leading-relaxed">
-                    Experience the next generation of trading with AI-powered algorithms, institutional-grade data, and lightning-fast execution. Built for the sophisticated Indian trader.
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <button
-                    onClick={() => setCurrentPage('platform')}
-                    className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all transform hover:scale-105 flex items-center justify-center"
-                  >
-                    <Play className="w-5 h-5 mr-2" />
-                    Launch Platform
+  const HomePage = () => (
+    <>
+      {/* Hero Section */}
+      <section className="pt-32 pb-20 md:pt-48 md:pb-32 bg-gray-900 text-white text-center relative overflow-hidden">
+          <div className="absolute inset-0 bg-grid-gray-800/50 [mask-image:linear-gradient(to_bottom,white_5%,transparent_100%)]"></div>
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+              <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 via-purple-500 to-red-500 bg-clip-text text-transparent mb-6">
+                  Trade Smarter, Faster, Stronger
+              </h1>
+              <p className="text-lg md:text-xl text-gray-300 max-w-2xl mx-auto mb-10">
+                  Leverage institutional-grade algorithmic trading tools, AI-driven market insights, and lightning-fast execution. Welcome to the future of trading.
+              </p>
+              <div className="flex justify-center space-x-4">
+                  <button onClick={() => setCurrentPage('platform')} className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg font-semibold shadow-lg hover:scale-105 transform transition-all duration-300">
+                      Launch Platform
                   </button>
-                  <button
-                    onClick={() => setCurrentPage('ai')}
-                    className="px-8 py-4 border border-gray-600 text-white font-semibold rounded-lg hover:bg-gray-800 transition-all"
-                  >
-                    Explore AI Strategies
+                  <button onClick={() => setCurrentPage('ai')} className="px-8 py-3 bg-gray-800 border border-gray-700 text-gray-300 rounded-lg font-semibold hover:bg-gray-700 hover:text-white transform transition-all duration-300">
+                      Explore AI Features
                   </button>
-                </div>
-                <div className="grid grid-cols-3 gap-8 pt-8">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-white">25,000+</div>
-                    <div className="text-gray-400">Active Traders</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-white">₹2,500Cr+</div>
-                    <div className="text-gray-400">Daily Volume</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-white">99.99%</div>
-                    <div className="text-gray-400">Uptime SLA</div>
-                  </div>
-                </div>
               </div>
-              <div className="relative">
-                <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-2xl p-6 border border-gray-700 backdrop-blur-sm">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-xl font-semibold text-white">Live Market Watch</h3>
-                    <Globe className="w-6 h-6 text-blue-400"/>
-                  </div>
-                  <div className="space-y-4">
-                    {marketData.map(stock => (
-                        <div key={stock.symbol} className="grid grid-cols-3 items-center gap-4">
-                            <div className="font-semibold text-white">{stock.symbol}</div>
-                            <div className="text-right text-white">{stock.price}</div>
-                            <div className={`text-right font-medium flex justify-end items-center ${stock.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
-                                {stock.trend === 'up' ? <TrendingUp className="w-4 h-4 mr-1"/> : <TrendingDown className="w-4 h-4 mr-1"/>}
-                                {stock.changePercent}
-                            </div>
-                        </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+          </div>
+      </section>
+
+      {/* Features Section */}
+      <section className="py-20 bg-gray-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16">
+                <h2 className="text-4xl font-bold text-white mb-4">Everything You Need to Succeed</h2>
+                <p className="text-xl text-gray-400">From advanced analytics to automated execution, we've got you covered.</p>
             </div>
-          </section>
-          
-          <section className="py-20 bg-black">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="text-center mb-16">
-                <h2 className="text-4xl font-extrabold text-white">Your Unfair Advantage</h2>
-                <p className="mt-4 text-xl text-gray-400">
-                  A complete suite of tools designed for performance, speed, and precision.
-                </p>
-              </div>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {features.map((feature, index) => (
-                  <div key={index} className="bg-gray-900/50 border border-gray-800 rounded-xl p-8 transform hover:-translate-y-2 transition-transform duration-300">
-                    <div className="flex items-center justify-center h-12 w-12 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white mb-6">
-                      <feature.icon className="h-6 w-6" />
+                    <div key={index} className="bg-gray-800/50 p-8 rounded-2xl border border-gray-700 hover:border-blue-500/50 transition-all duration-300 transform hover:-translate-y-1">
+                        <div className="flex items-center justify-center h-12 w-12 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white mb-6">
+                            <feature.icon className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-white mb-3">{feature.title}</h3>
+                        <p className="text-gray-400 mb-4">{feature.description}</p>
+                        <ul className="space-y-2">
+                           {feature.highlights.map(highlight => (
+                             <li key={highlight} className="flex items-center text-gray-300 text-sm">
+                               <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                               {highlight}
+                             </li>
+                           ))}
+                        </ul>
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-3">{feature.title}</h3>
-                    <p className="text-gray-400 mb-4">{feature.description}</p>
-                    <ul className="space-y-2">
-                        {feature.highlights.map((highlight, i) => (
-                            <li key={i} className="flex items-center text-gray-300">
-                                <CheckCircle className="w-4 h-4 mr-2 text-green-400" />
-                                {highlight}
-                            </li>
-                        ))}
-                    </ul>
-                  </div>
                 ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="py-20 bg-gray-900">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="lg:text-center">
-                    <h2 className="text-base text-blue-400 font-semibold tracking-wide uppercase">AI-Powered Trading</h2>
-                    <p className="mt-2 text-3xl leading-8 font-extrabold tracking-tight text-white sm:text-4xl">
-                        Outsmart the Market with Machine Intelligence
-                    </p>
-                    <p className="mt-4 max-w-2xl text-xl text-gray-400 lg:mx-auto">
-                        Leverage our proprietary AI models to gain predictive insights and automate complex trading strategies.
-                    </p>
-                </div>
-                <div className="mt-12 grid gap-10 md:grid-cols-2 lg:grid-cols-3">
-                    {aiFeatures.map((item, index) => (
-                        <div key={index} className="bg-gray-800 rounded-lg shadow-lg p-6 flex flex-col items-start">
-                            <div className="flex items-center justify-center h-12 w-12 rounded-md bg-white bg-opacity-10 text-white mb-4">
-                                <item.icon className="h-6 w-6" />
-                            </div>
-                            <h3 className="text-lg font-medium text-white">{item.title}</h3>
-                            <p className="mt-2 text-base text-gray-400">{item.description}</p>
-                            <div className="mt-4 flex w-full justify-between items-center">
-                                <span className="text-sm font-semibold text-green-400">{item.performance}</span>
-                                <span className="text-sm font-semibold text-yellow-400">{item.sharpe}</span>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-          </section>
-
-          <EnhancedTradingForecastCalculator calculatorRef={calculatorRef} />
-
-          <section className="bg-black py-20">
-            <div className="max-w-4xl mx-auto text-center px-4">
-              <h2 className="text-4xl font-extrabold text-white">Ready to Elevate Your Trading?</h2>
-              <p className="text-xl text-gray-400 mt-4">Join thousands of traders who are leveraging SpeedEdge to build their wealth. Get started for free, no credit card required.</p>
-              <button onClick={() => setCurrentPage('pricing')} className="mt-8 px-10 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold text-lg rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all transform hover:scale-105">
-                View Pricing & Plans
-              </button>
-            </div>
-          </section>
-        </div>
-    );
-  }
-  
-  // Trading Platform Page
-  const TradingPlatformPage = () => (
-    <div className="pt-24 min-h-screen bg-black text-white px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-12">
-                <h1 className="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">The Ultimate Trading Cockpit</h1>
-                <p className="mt-4 text-xl text-gray-400 max-w-3xl mx-auto">A professional-grade environment built for speed, precision, and deep market analysis.</p>
-            </div>
-            <div className="bg-gray-900 rounded-2xl border border-gray-800 p-4 lg:p-6 grid grid-cols-12 gap-4 h-[70vh]">
-                <div className="col-span-12 lg:col-span-3 bg-gray-800/50 rounded-lg p-3 space-y-2 overflow-y-auto">
-                    <h3 className="text-lg font-bold p-1">Watchlist</h3>
-                    {marketData.concat([
-                        { symbol: 'TCS', price: '3,815.10', change: '-12.05', changePercent: '-0.32%', trend: 'down' },
-                        { symbol: 'INFY', price: '1,622.75', change: '+1.40', changePercent: '+0.09%', trend: 'up' },
-                        { symbol: 'HDFCBANK', price: '1,695.50', change: '+25.80', changePercent: '+1.55%', trend: 'up' },
-                    ]).map(stock => (
-                        <div key={stock.symbol} className="grid grid-cols-3 gap-2 p-2 rounded-md hover:bg-gray-700/50 cursor-pointer text-sm">
-                            <span className="font-semibold col-span-1">{stock.symbol}</span>
-                            <span className="text-right">{stock.price}</span>
-                            <span className={`text-right font-medium ${stock.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>{stock.changePercent}</span>
-                        </div>
-                    ))}
-                </div>
-                <div className="col-span-12 lg:col-span-6 flex flex-col gap-4">
-                    <div className="flex-grow bg-gray-800/50 rounded-lg p-3 flex flex-col">
-                        <div className="flex justify-between items-center mb-2">
-                           <h4 className="font-bold">NIFTY 50</h4>
-                           <div className="flex items-center space-x-2 text-sm bg-gray-900 p-1 rounded-md">
-                               <button className="px-2 py-1 rounded bg-blue-500/20">1D</button>
-                               <button className="px-2 py-1 rounded hover:bg-gray-700">5D</button>
-                               <button className="px-2 py-1 rounded hover:bg-gray-700">1M</button>
-                               <button className="px-2 py-1 rounded hover:bg-gray-700">6M</button>
-                           </div>
-                        </div>
-                        <div className="flex-1"><MockChart/></div>
-                    </div>
-                    <div className="h-1/3 bg-gray-800/50 rounded-lg p-3">
-                         <h3 className="text-lg font-bold mb-2">Positions</h3>
-                         <p className="text-gray-400 text-sm">No active positions.</p>
-                    </div>
-                </div>
-                <div className="col-span-12 lg:col-span-3 bg-gray-800/50 rounded-lg p-3">
-                    <h3 className="text-lg font-bold mb-4">Order Entry</h3>
-                    <div className="space-y-4">
-                       <div>
-                         <label className="text-sm text-gray-400 block">Symbol</label>
-                         <input type="text" defaultValue="NIFTYBEES" className="w-full bg-gray-700 border border-gray-600 rounded p-2 mt-1 focus:outline-none focus:ring-1 focus:ring-blue-500"/>
-                       </div>
-                        <div>
-                         <label className="text-sm text-gray-400 block">Quantity</label>
-                         <input type="number" defaultValue="100" className="w-full bg-gray-700 border border-gray-600 rounded p-2 mt-1 focus:outline-none focus:ring-1 focus:ring-blue-500"/>
-                       </div>
-                       <div className="flex space-x-2">
-                            <button className="w-full py-3 bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 transition-colors">BUY</button>
-                            <button className="w-full py-3 bg-red-600 rounded-lg font-semibold hover:bg-red-700 transition-colors">SELL</button>
-                       </div>
-                    </div>
-                </div>
             </div>
         </div>
-    </div>
-  );
-  
-  // AI Page
-  const AIPage = () => (
-    <div className="pt-24 min-h-screen bg-gray-900 text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="text-center mb-16">
-          <h1 className="text-5xl font-extrabold tracking-tight">Intelligence Amplified</h1>
-          <p className="mt-4 text-xl text-gray-300 max-w-3xl mx-auto">
-            Deploy sophisticated, pre-built AI strategies or use our AI toolkit to build your own.
-          </p>
-        </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {aiFeatures.map((item, index) => (
-                <div key={index} className="bg-gray-800 rounded-xl shadow-2xl p-8 border border-purple-500/20 flex flex-col">
-                    <div className="flex items-center justify-center h-16 w-16 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 text-white mb-6">
-                        <item.icon className="h-8 w-8" />
-                    </div>
-                    <h3 className="text-2xl font-bold text-white mb-3">{item.title}</h3>
-                    <p className="text-gray-400 flex-grow">{item.description}</p>
-                    <div className="mt-6 border-t border-gray-700 pt-4 space-y-2">
-                        <p className="flex justify-between text-green-400 font-semibold"><span>Backtested Return:</span> <span>{item.performance}</span></p>
-                        <p className="flex justify-between text-yellow-400 font-semibold"><span>Risk/Reward Metric:</span> <span>{item.sharpe}</span></p>
-                    </div>
-                     <button className="mt-6 w-full py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all">
-                        Deploy Strategy
-                     </button>
-                </div>
-            ))}
-        </div>
-      </div>
-    </div>
-  );
+      </section>
 
-  // Market Data Page
-  const MarketDataPage = () => (
-     <div className="pt-24 min-h-screen bg-black text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-            <div className="text-center">
-                <h1 className="text-5xl font-bold">Institutional-Grade Market Data</h1>
-                <p className="mt-4 text-lg text-gray-400">Access the same high-quality data used by professional funds.</p>
+      {/* Pricing Section */}
+      <section className="py-20 bg-gray-800/40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16">
+                <h2 className="text-4xl font-bold text-white mb-4">Pricing Plans for Every Trader</h2>
+                <p className="text-xl text-gray-400">Start for free, and scale as you grow. No hidden fees.</p>
             </div>
-            <div className="mt-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 text-center">
-                <div className="bg-gray-900 p-8 rounded-lg border border-gray-800">
-                    <Database className="h-12 w-12 mx-auto text-blue-400"/>
-                    <h3 className="mt-6 text-xl font-semibold text-white">Real-Time Feeds</h3>
-                    <p className="mt-2 text-gray-400">Direct, low-latency data feeds from NSE, BSE, and MCX for equities, F&O, and commodities.</p>
-                </div>
-                <div className="bg-gray-900 p-8 rounded-lg border border-gray-800">
-                    <Clock className="h-12 w-12 mx-auto text-blue-400"/>
-                    <h3 className="mt-6 text-xl font-semibold text-white">Historical Data</h3>
-                    <p className="mt-2 text-gray-400">20+ years of tick-by-tick historical data for robust backtesting and model training.</p>
-                </div>
-                <div className="bg-gray-900 p-8 rounded-lg border border-gray-800">
-                    <Layers className="h-12 w-12 mx-auto text-blue-400"/>
-                    <h3 className="mt-6 text-xl font-semibold text-white">Options Analytics</h3>
-                    <p className="mt-2 text-gray-400">Live options chain, greeks, and implied volatility data to inform your options strategies.</p>
-                </div>
-            </div>
-        </div>
-     </div>
-  );
-
-  // Pricing Page
-  const PricingPage = () => (
-    <div className="pt-24 min-h-screen bg-gray-900">
-        <div className="max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
-            <div className="text-center">
-                <h1 className="text-5xl font-extrabold text-white">Choose Your Edge</h1>
-                <p className="mt-4 text-xl text-gray-400">Simple, transparent pricing. No hidden fees.</p>
-            </div>
-            <div className="mt-16 grid lg:grid-cols-3 gap-8 items-stretch">
-                {pricingPlans.map(plan => (
-                    <div key={plan.name} className={`rounded-xl border ${plan.popular ? 'border-purple-500' : 'border-gray-700'} p-8 flex flex-col relative bg-gray-800`}>
-                        {plan.popular && <div className="absolute top-0 -translate-y-1/2 left-1/2 -translate-x-1/2 px-4 py-1 bg-purple-500 text-white text-sm font-semibold rounded-full">Most Popular</div>}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 items-center">
+                {pricingPlans.map((plan, index) => (
+                    <div key={index} className={`bg-gray-800 p-8 rounded-3xl border ${plan.popular ? 'border-purple-500' : 'border-gray-700'} ${plan.popular ? 'scale-105' : ''} transition-all duration-300 relative`}>
+                        {plan.popular && <span className="absolute top-0 -translate-y-1/2 left-1/2 -translate-x-1/2 bg-purple-500 text-white text-xs font-bold px-3 py-1 rounded-full">MOST POPULAR</span>}
                         <h3 className="text-2xl font-semibold text-white">{plan.name}</h3>
-                        <p className="mt-4 text-gray-400 flex-grow">{plan.description}</p>
-                        <div className="mt-6">
-                            <span className="text-4xl font-bold text-white">{plan.price}</span>
-                            <span className="text-lg font-medium text-gray-400">{plan.period}</span>
-                        </div>
-                        <ul className="mt-8 space-y-4">
+                        <p className="text-gray-400 mt-2 mb-6">{plan.description}</p>
+                        <p className="mb-6">
+                            <span className="text-5xl font-extrabold text-white">{plan.price}</span>
+                            <span className="text-lg text-gray-400">{plan.period}</span>
+                        </p>
+                        <ul className="space-y-3 mb-8">
                             {plan.features.map(feature => (
-                                <li key={feature} className="flex items-start">
-                                    <CheckCircle className="h-6 w-6 text-green-400 flex-shrink-0 mr-3" />
-                                    <span className="text-gray-300">{feature}</span>
+                                <li key={feature} className="flex items-center text-gray-300">
+                                    <CheckCircle className="w-5 h-5 mr-3 text-green-500" />
+                                    {feature}
                                 </li>
                             ))}
                         </ul>
-                        <button className={`mt-8 w-full py-3 rounded-lg font-semibold transition-colors ${plan.popular ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-white'}`}>{plan.cta}</button>
+                        <button className={`w-full py-3 rounded-lg font-semibold transition-all ${plan.popular ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-600'}`}>
+                            {plan.cta}
+                        </button>
                     </div>
                 ))}
             </div>
         </div>
-    </div>
-  );
+      </section>
+      
+      {/* Testimonials Section */}
+      <section className="py-20 bg-gray-900">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="text-center mb-16">
+                  <h2 className="text-4xl font-bold text-white mb-4">Loved by Traders Worldwide</h2>
+                  <p className="text-xl text-gray-400">Don't just take our word for it. Here's what our users say.</p>
+              </div>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {testimonials.map((testimonial, index) => (
+                      <div key={index} className="bg-gray-800 p-8 rounded-2xl border border-gray-700 space-y-4">
+                          <p className="text-gray-300">"{testimonial.text}"</p>
+                          <div className="flex items-center space-x-4">
+                              <img className="w-12 h-12 rounded-full" src={testimonial.avatar} alt={testimonial.name} />
+                              <div>
+                                  <p className="text-white font-semibold">{testimonial.name}</p>
+                                  <p className="text-purple-400 text-sm">{testimonial.role}</p>
+                              </div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      </section>
 
-  // Contact Page
-  const ContactPage = () => (
-    <div className="pt-24 min-h-screen bg-black">
-        <div className="max-w-7xl mx-auto py-16 px-4 sm:px-6 lg:px-8 grid md:grid-cols-2 gap-16 items-start">
-            <div className="text-white">
-                <h1 className="text-4xl font-bold">Get in Touch</h1>
-                <p className="mt-3 text-lg text-gray-400">We're here to help. Whether you're a current user or just have a question, reach out to us.</p>
-                <div className="mt-8 space-y-6">
-                    <div className="flex items-start">
-                        <Mail className="h-6 w-6 text-blue-400 mt-1 flex-shrink-0" />
-                        <div className="ml-4">
-                            <h3 className="text-lg font-semibold">Email</h3>
-                            <a href="mailto:support@speededge.dev" className="text-gray-300 hover:text-blue-400">support@speededge.dev</a>
-                        </div>
-                    </div>
-                     <div className="flex items-start">
-                        <Phone className="h-6 w-6 text-blue-400 mt-1 flex-shrink-0" />
-                        <div className="ml-4">
-                            <h3 className="text-lg font-semibold">Phone</h3>
-                            <p className="text-gray-300">+91 (022) 1234-5678</p>
-                        </div>
-                    </div>
-                     <div className="flex items-start">
-                        <MapPin className="h-6 w-6 text-blue-400 mt-1 flex-shrink-0" />
-                        <div className="ml-4">
-                            <h3 className="text-lg font-semibold">Address</h3>
-                            <p className="text-gray-300">SpeedEdge Towers, BKC, Mumbai,<br/> Maharashtra, India</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div className="bg-gray-900 p-8 rounded-lg border border-gray-800">
-                <form className="space-y-6">
-                    <div>
-                        <label htmlFor="name" className="text-sm font-medium text-gray-300">Full Name</label>
-                        <input type="text" id="name" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                    <div>
-                        <label htmlFor="email" className="text-sm font-medium text-gray-300">Email</label>
-                        <input type="email" id="email" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500" />
-                    </div>
-                    <div>
-                        <label htmlFor="message" className="text-sm font-medium text-gray-300">Message</label>
-                        <textarea id="message" rows="4" className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white focus:ring-blue-500 focus:border-blue-500"></textarea>
-                    </div>
-                    <button type="submit" className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md transition-colors">Send Message</button>
-                </form>
-            </div>
-        </div>
-    </div>
+      {/* Calculator Section */}
+      <EnhancedTradingForecastCalculator calculatorRef={calculatorRef} />
+    </>
   );
   
-  // Dashboard Page (Handles Login and Logged-in View)
-  const DashboardPage = () => {
-    
-    // Login form submit handler
-    const handleLogin = (e) => {
-        e.preventDefault();
-        setIsLoggedIn(true);
+  const AIPage = () => {
+    const [prompt, setPrompt] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [aiResults, setAiResults] = useState(null);
+    const [error, setError] = useState(null);
 
-        if (postLoginRedirect) {
-            setCurrentPage(postLoginRedirect.page);
+    const handleSearch = async (e) => {
+        if (e) e.preventDefault();
+        if (!prompt.trim()) return;
+
+        setIsLoading(true);
+        setError(null);
+        setAiResults(null);
+        
+        const fullPrompt = `Based on the following user query, suggest up to 5 relevant Indian stock symbols (from the NSE/BSE). For each symbol, provide a brief, one-sentence rationale for why it matches the query. User Query: "${prompt}". A list of valid symbols includes: ${VALID_STOCKS.slice(0, 50).join(', ')}. Please provide the response in the structured format.`;
+
+        try {
+             let chatHistory = [];
+             chatHistory.push({ role: "user", parts: [{ text: fullPrompt }] });
+             const payload = {
+                 contents: chatHistory,
+                 generationConfig: {
+                     responseMimeType: "application/json",
+                     responseSchema: {
+                         type: "OBJECT",
+                         properties: {
+                           "stocks": {
+                              "type": "ARRAY",
+                              "items": {
+                                  "type": "OBJECT",
+                                  "properties": {
+                                      "symbol": { "type": "STRING", "description": "The stock ticker symbol (e.g., RELIANCE)" },
+                                      "rationale": { "type": "STRING", "description": "A brief explanation for the recommendation" }
+                                  },
+                                  "required": ["symbol", "rationale"]
+                              }
+                           }
+                         },
+                     }
+                 }
+             };
+             const apiKey = ""; // Canvas will provide this
+             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+             const response = await fetch(apiUrl, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify(payload)
+             });
+
+            if (!response.ok) {
+                const errorBody = await response.json();
+                console.error("Gemini API Error:", errorBody);
+                throw new Error(errorBody.error?.message || `API request failed with status ${response.status}`);
+            }
+
+             const result = await response.json();
+             
+             if (result.candidates && result.candidates.length > 0) {
+                const text = result.candidates[0].content.parts[0].text;
+                const parsedJson = JSON.parse(text);
+
+                const stocksWithData = await Promise.all(
+                    (parsedJson.stocks || []).map(async (stock) => {
+                        const stockData = await fetchStockData(stock.symbol);
+                        return { ...stock, ...stockData };
+                    })
+                );
+                setAiResults(stocksWithData);
+             } else {
+                 throw new Error("No valid response from AI.");
+             }
+        } catch (err) {
+            console.error(err);
+            setError(err.message || "An unexpected error occurred. The AI might be busy, please try again later.");
+        } finally {
+            setIsLoading(false);
         }
     };
 
-    // If not logged in, show the login/signup form
-    if (!isLoggedIn) {
-      return (
-        <div className="pt-20 min-h-screen bg-gray-900 flex items-center justify-center">
-            <div className="max-w-md w-full bg-gray-800 p-8 rounded-2xl border border-gray-700 shadow-xl">
-                <div className="text-center mb-8">
-                    <Logo className="mx-auto" />
-                    <h2 className="mt-6 text-3xl font-bold text-white">Welcome Back</h2>
-                    <p className="mt-2 text-gray-400">Login to access your trading dashboard.</p>
-                </div>
-                <form onSubmit={handleLogin} className="space-y-6">
-                    <div>
-                        <label className="text-sm font-medium text-gray-300">Email Address</label>
-                        <input type="email" required className="mt-1 w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" defaultValue="trader@example.com"/>
-                    </div>
-                     <div>
-                        <label className="text-sm font-medium text-gray-300">Password</label>
-                        <input type="password" required className="mt-1 w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" defaultValue="password"/>
-                    </div>
-                    <button type="submit" className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all text-lg">
-                       <LogIn className="inline-block w-5 h-5 mr-2" /> Secure Login
-                    </button>
-                    <p className="text-center text-sm text-gray-400">
-                        Don't have an account? <button onClick={() => setCurrentPage('pricing')} className="font-medium text-blue-400 hover:text-blue-300">Sign up</button>
+    return (
+        <div className="pt-32 pb-20 bg-gray-900 text-white">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="text-center mb-12">
+                    <h1 className="text-5xl font-extrabold tracking-tight mb-4">AI-Powered Stock Search</h1>
+                    <p className="text-xl text-gray-400">
+                        Describe your ideal investment in plain English. Let our AI find the right stocks for you.
                     </p>
+                </div>
+
+                <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-4 mb-12">
+                    <div className="relative flex-grow">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"/>
+                        <input
+                            type="text"
+                            value={prompt}
+                            onChange={(e) => setPrompt(e.target.value)}
+                            placeholder='e.g., "undervalued tech stocks with high growth potential"'
+                            className="w-full bg-gray-800 border border-gray-700 text-white rounded-lg pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg font-semibold shadow-lg hover:scale-105 transform transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                        {isLoading ? <Loader2 className="animate-spin w-5 h-5 mr-2" /> : <Bot className="w-5 h-5 mr-2" />}
+                        {isLoading ? 'Searching...' : 'Ask AI'}
+                    </button>
                 </form>
+
+                <div className="min-h-[300px]">
+                    {isLoading && (
+                        <div className="flex flex-col items-center justify-center text-gray-400">
+                            <Loader2 className="w-12 h-12 animate-spin text-purple-400 mb-4" />
+                            <p>Analyzing markets and finding opportunities...</p>
+                        </div>
+                    )}
+                    {error && (
+                        <div className="bg-red-900/50 border border-red-700 text-red-300 p-4 rounded-lg flex items-center">
+                            <AlertTriangle className="w-6 h-6 mr-3"/>
+                            <div>
+                                <h4 className="font-bold">Search Failed</h4>
+                                <p className="text-sm">{error}</p>
+                            </div>
+                        </div>
+                    )}
+                    {aiResults && (
+                        <div className="space-y-4">
+                           <h3 className="text-2xl font-bold text-white">AI Recommendations</h3>
+                            {aiResults.map((stock, index) => (
+                                <div key={index} className="bg-gray-800 p-4 rounded-lg border border-gray-700 grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+                                    <div className="md:col-span-1">
+                                        <p className="text-xl font-bold text-blue-400">{stock.symbol}</p>
+                                        <p className="text-sm text-gray-400">{stock.error ? 'Price N/A' : `₹${stock.price}`}</p>
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <p className="text-gray-300">{stock.rationale}</p>
+                                    </div>
+                                    <div className="md:col-span-1 text-right">
+                                        {!stock.error ? (
+                                             <span className={`font-medium flex items-center justify-end ${stock.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
+                                                {stock.trend === 'up' ? <TrendingUp className="w-4 h-4 mr-1"/> : <TrendingDown className="w-4 h-4 mr-1"/>}
+                                                {stock.changePercent}
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs text-yellow-500">{stock.error}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
-      );
+    );
+};
+
+  
+  const PlatformPage = () => {
+    const [selectedStock, setSelectedStock] = useState({ symbol: 'RELIANCE', price: 'Loading...', changePercent: '...', trend: 'up' });
+    const [orderType, setOrderType] = useState('buy');
+    const [quantity, setQuantity] = useState(10);
+    const watchlist = ['TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'TATAMOTORS'];
+
+    const fetchSelectedStockData = useCallback(async (symbol) => {
+      const data = await fetchStockData(symbol);
+      if (data && !data.error) {
+          setSelectedStock(data);
+      } else {
+          setSelectedStock({ symbol, price: 'Error', changePercent: 'N/A', trend: 'down' });
+      }
+    }, [fetchStockData]);
+
+    useEffect(() => {
+        fetchSelectedStockData('RELIANCE');
+    }, [fetchSelectedStockData]);
+
+    const handleSelectStock = (symbol) => {
+        setSelectedStock({ symbol, price: 'Loading...', changePercent: '...', trend: 'up' });
+        fetchSelectedStockData(symbol);
     }
     
-    // If logged in, show the actual dashboard
     return (
-        <div className="pt-24 min-h-screen bg-black text-white px-4 sm:px-6 lg:px-8">
-            <div className="max-w-7xl mx-auto">
-                <header className="mb-8">
-                    <h1 className="text-3xl font-bold">Trader Dashboard</h1>
-                    <p className="text-gray-400">Welcome back, Alex.</p>
-                </header>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Main Content */}
-                    <main className="lg:col-span-2 space-y-8">
-                       {/* Key Stats */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-                                <h3 className="text-gray-400 text-sm font-medium">Portfolio Value</h3>
-                                <p className="text-3xl font-bold text-white mt-2">₹1,24,567.89</p>
-                                <p className="text-sm text-green-400 mt-1 flex items-center"><TrendingUp className="w-4 h-4 mr-1"/>+2.34% Today</p>
-                            </div>
-                            <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-                                <h3 className="text-gray-400 text-sm font-medium">Today's P&L</h3>
-                                <p className="text-3xl font-bold text-green-400 mt-2">₹2,845.12</p>
-                                <p className="text-sm text-gray-400 mt-1">Realized + Unrealized</p>
-                            </div>
-                            <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-                                <h3 className="text-gray-400 text-sm font-medium">Available Funds</h3>
-                                <p className="text-3xl font-bold text-white mt-2">₹45,210.50</p>
-                                <p className="text-sm text-gray-400 mt-1">Ready to deploy</p>
+        <div className="pt-32 pb-20 bg-gray-900 text-white min-h-screen">
+          <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                
+                {/* Main Panel: Chart and Details */}
+                <div className="lg:col-span-3 space-y-6">
+                    {/* Stock Header */}
+                    <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 flex justify-between items-center">
+                        <div>
+                            <h1 className="text-3xl font-bold text-white">{selectedStock.symbol}</h1>
+                            <p className="text-gray-400">Reliance Industries Ltd.</p>
+                        </div>
+                        <div className="text-right">
+                            <p className={`text-3xl font-bold ${selectedStock.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
+                                ₹{selectedStock.price}
+                            </p>
+                            <p className={`text-lg font-semibold ${selectedStock.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
+                                {selectedStock.changePercent}
+                            </p>
+                        </div>
+                    </div>
+                    {/* Chart */}
+                    <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 h-96">
+                        <MockChart trend={selectedStock.trend} />
+                    </div>
+                    {/* Positions / Orders Tabs */}
+                    <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                        <h3 className="text-xl font-semibold mb-2">My Activity</h3>
+                        <p className="text-gray-400">Your open positions and pending orders will appear here.</p>
+                    </div>
+                </div>
+
+                {/* Side Panel: Order and Watchlist */}
+                <div className="lg:col-span-1 space-y-6">
+                    {/* Order Panel */}
+                    <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                        <h2 className="text-2xl font-bold text-white mb-4">Order Ticket</h2>
+                        <div className="grid grid-cols-2 gap-2 mb-4">
+                            <button 
+                                onClick={() => setOrderType('buy')}
+                                className={`py-2 rounded-lg font-semibold transition-all ${orderType === 'buy' ? 'bg-green-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>
+                                BUY
+                            </button>
+                            <button 
+                                onClick={() => setOrderType('sell')}
+                                className={`py-2 rounded-lg font-semibold transition-all ${orderType === 'sell' ? 'bg-red-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>
+                                SELL
+                            </button>
+                        </div>
+                        <div className="space-y-4">
+                            <InputField label="Quantity" id="quantity" name="quantity" value={quantity} onChange={e => setQuantity(e.target.value)} ringColor={orderType === 'buy' ? 'blue' : 'purple'}/>
+                            <InputField label="Price (Market)" id="price" name="price" value={selectedStock.price} onChange={() => {}} ringColor={orderType === 'buy' ? 'blue' : 'purple'} type="text"/>
+                             <div>
+                                <p className="text-sm text-gray-400">Est. Value</p>
+                                <p className="text-lg font-semibold">₹{(quantity * parseFloat(selectedStock.price.replace(/,/g, '')) || 0).toLocaleString('en-IN')}</p>
                             </div>
                         </div>
-                        {/* Portfolio Holdings */}
-                        <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-                            <h3 className="text-xl font-bold mb-4">Holdings</h3>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left">
-                                    <thead>
-                                        <tr className="border-b border-gray-700">
-                                            <th className="py-2 font-medium text-gray-400">Symbol</th>
-                                            <th className="py-2 font-medium text-gray-400 text-right">Quantity</th>
-                                            <th className="py-2 font-medium text-gray-400 text-right">Avg. Price</th>
-                                            <th className="py-2 font-medium text-gray-400 text-right">Current Value</th>
-                                            <th className="py-2 font-medium text-gray-400 text-right">P&L</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {[{sym: 'RELIANCE', qty: 10, avg: '2800.00', val: '28476.50', pnl: '+476.50', up: true},
-                                         {sym: 'TCS', qty: 5, avg: '3900.00', val: '19075.50', pnl: '-424.50', up: false},
-                                         {sym: 'NIFTYBEES', qty: 100, avg: '240.00', val: '26500.00', pnl: '+2500.00', up: true}].map(h => (
-                                            <tr key={h.sym} className="border-b border-gray-800">
-                                                <td className="py-3 font-semibold">{h.sym}</td>
-                                                <td className="py-3 text-right">{h.qty}</td>
-                                                <td className="py-3 text-right">{h.avg}</td>
-                                                <td className="py-3 text-right">₹{h.val}</td>
-                                                <td className={`py-3 text-right font-semibold ${h.up ? 'text-green-400' : 'text-red-400'}`}>₹{h.pnl}</td>
-                                            </tr>
-                                         ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                        <button className={`w-full py-3 mt-6 rounded-lg font-bold text-white text-lg transition-all ${orderType === 'buy' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                            Place {orderType.toUpperCase()} Order
+                        </button>
+                    </div>
+                    {/* Watchlist */}
+                    <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                        <h2 className="text-2xl font-bold text-white mb-4">Watchlist</h2>
+                        <div className="space-y-2">
+                           {watchlist.map(stock => (
+                                <button key={stock} onClick={() => handleSelectStock(stock)} className="w-full text-left p-2 rounded-md hover:bg-gray-700 flex justify-between">
+                                    <span className="font-semibold">{stock}</span>
+                                    {/* Placeholder for live price */}
+                                    <span className="text-green-400">...</span>
+                                </button>
+                           ))}
                         </div>
-                    </main>
-                    {/* Sidebar */}
-                    <aside className="lg:col-span-1 space-y-8">
-                       <div className="bg-gray-900 p-6 rounded-xl border border-gray-800">
-                         <h3 className="text-xl font-bold mb-4">Active Algorithms</h3>
-                         <div className="space-y-4">
-                            <div className="bg-gray-800 p-4 rounded-lg">
-                                <p className="font-semibold">Momentum Scalper v2</p>
-                                <p className="text-sm text-gray-400">RELIANCE | 5min</p>
-                                <p className="text-sm text-green-400 font-bold mt-1">P&L: +₹1,230.15</p>
+                    </div>
+                </div>
+            </div>
+          </div>
+        </div>
+    );
+  };
+  
+  const DataPage = () => {
+    const [marketData, setMarketData] = useState({ gainers: [], losers: [] });
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            setIsLoading(true);
+            const topStocks = ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ITC', 'LT', 'SBIN', 'AXISBANK'];
+            const results = await Promise.all(topStocks.map(s => fetchStockData(s)));
+            const validResults = results.filter(r => r && !r.error);
+            
+            validResults.sort((a, b) => parseFloat(b.changePercent) - parseFloat(a.changePercent));
+            
+            setMarketData({
+                gainers: validResults.filter(r => parseFloat(r.changePercent) >= 0).slice(0, 5),
+                losers: validResults.filter(r => parseFloat(r.changePercent) < 0).slice(0, 5)
+            });
+            setIsLoading(false);
+        };
+        fetchData();
+    }, [fetchStockData]);
+
+    const renderTable = (data, title) => (
+        <div>
+            <h3 className="text-2xl font-bold mb-4">{title}</h3>
+            <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
+                <table className="w-full">
+                    <thead>
+                        <tr className="bg-gray-700/50">
+                            <th className="p-3 text-left text-sm font-semibold text-gray-300">Symbol</th>
+                            <th className="p-3 text-right text-sm font-semibold text-gray-300">Price (₹)</th>
+                            <th className="p-3 text-right text-sm font-semibold text-gray-300">Change (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {data.map((stock, index) => (
+                            <tr key={index} className="border-t border-gray-700">
+                                <td className="p-3 font-semibold">{stock.symbol}</td>
+                                <td className="p-3 text-right">{stock.price}</td>
+                                <td className={`p-3 text-right font-semibold ${stock.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
+                                    {stock.changePercent}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="pt-32 pb-20 bg-gray-900 text-white min-h-screen">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="text-center mb-12">
+                    <h1 className="text-5xl font-extrabold tracking-tight mb-4">Market Data</h1>
+                    <p className="text-xl text-gray-400">Snapshot of today's market movers.</p>
+                </div>
+                {isLoading ? (
+                     <div className="flex justify-center items-center h-64">
+                         <Loader2 className="w-12 h-12 animate-spin text-purple-400"/>
+                     </div>
+                ) : (
+                    <div className="space-y-12">
+                        {renderTable(marketData.gainers, "Top Gainers")}
+                        {renderTable(marketData.losers, "Top Losers")}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+  };
+  
+  const CryptoPage = () => {
+      const [cryptoData, setCryptoData] = useState([]);
+      const [isLoading, setIsLoading] = useState(true);
+      const cryptoList = ['BTC', 'ETH', 'XRP', 'LTC', 'ADA'];
+
+      useEffect(() => {
+          const fetchAllCryptoData = async () => {
+              setIsLoading(true);
+              const results = await Promise.all(cryptoList.map(c => fetchCryptoData(c)));
+              setCryptoData(results);
+              setIsLoading(false);
+          };
+          fetchAllCryptoData();
+      }, [fetchCryptoData]);
+
+      return (
+        <div className="pt-32 pb-20 bg-gray-900 text-white min-h-screen">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="text-center mb-12">
+                    <h1 className="text-5xl font-extrabold tracking-tight mb-4">Crypto World</h1>
+                    <p className="text-xl text-gray-400">Real-time prices for major cryptocurrencies in INR.</p>
+                </div>
+                {isLoading ? (
+                    <div className="flex justify-center items-center h-64">
+                        <Loader2 className="w-12 h-12 animate-spin text-purple-400"/>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {cryptoData.map((crypto, index) => (
+                            <div key={index} className="bg-gray-800 p-4 rounded-lg border border-gray-700 grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
+                                <div className="md:col-span-1">
+                                    <p className="text-xl font-bold text-yellow-400">{crypto.symbol}</p>
+                                    <p className="text-xs text-gray-400">{crypto.name}</p>
+                                </div>
+                                <p className="md:col-span-2 text-lg font-semibold">{crypto.price}</p>
+                                <div className="md:col-span-1 text-right">
+                                    {crypto.error ? (
+                                        <span className="text-xs text-red-500">{crypto.error}</span>
+                                    ) : (
+                                        <p className={`font-semibold ${crypto.trend === 'up' ? 'text-green-400' : 'text-red-400'}`}>
+                                            {crypto.change}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
-                             <div className="bg-gray-800 p-4 rounded-lg">
-                                <p className="font-semibold">Mean Reversion Bot</p>
-                                <p className="text-sm text-gray-400">BANKNIFTY | 15min</p>
-                                <p className="text-sm text-red-400 font-bold mt-1">P&L: -₹845.60</p>
-                            </div>
-                            <button className="w-full text-center py-2 text-blue-400 hover:text-white transition-colors">Manage Algorithms</button>
-                         </div>
+                        ))}
+                        <p className="text-xs text-gray-500 text-center pt-4">* Change percentage is randomized for visual representation as it's not provided by the API endpoint.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+  };
+  
+  const ScriptingPage = () => {
+    const [code, setCode] = useState(
+`// Welcome to SpeedEdge Scripting Environment
+// Use our Python-like syntax to define your strategy.
+
+function initialize(context) {
+    // Schedule our main trading logic to run every day.
+    schedule_function(my_trading_logic, date_rules.every_day(), time_rules.market_open(minutes=30));
+    
+    // Define the stock we want to trade.
+    context.stock = symbol('RELIANCE');
+}
+
+function my_trading_logic(context, data) {
+    // Get historical data for our stock.
+    history = data.history(context.stock, 'price', 50, '1d');
+    
+    // Calculate moving averages.
+    short_mavg = history.iloc[-20:].mean();
+    long_mavg = history.iloc[-50:].mean();
+    
+    // Trading logic: Golden Cross
+    if (short_mavg > long_mavg && context.portfolio.positions[context.stock].amount == 0) {
+        // Buy 100 shares.
+        order_target_percent(context.stock, 0.5);
+        log.info(\`Buying \${context.stock.symbol}\`);
+    } else if (short_mavg < long_mavg) {
+        // Sell all shares.
+        order_target_percent(context.stock, 0);
+        log.info(\`Selling \${context.stock.symbol}\`);
+    }
+}`);
+
+    return (
+        <div className="pt-32 pb-20 bg-gray-900 text-white min-h-screen">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="text-center mb-12">
+                    <h1 className="text-5xl font-extrabold tracking-tight mb-4">Custom Strategy Scripting</h1>
+                    <p className="text-xl text-gray-400">Build, backtest, and deploy your own trading algorithms.</p>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-gray-800 rounded-lg p-2 border border-gray-700">
+                       <div className="bg-gray-900 p-2 rounded-t-md flex items-center gap-2">
+                         <span className="w-3 h-3 bg-red-500 rounded-full"></span>
+                         <span className="w-3 h-3 bg-yellow-500 rounded-full"></span>
+                         <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                         <span className="text-sm text-gray-400 ml-auto">strategy.py</span>
                        </div>
-                    </aside>
+                        <textarea
+                            value={code}
+                            onChange={(e) => setCode(e.target.value)}
+                            className="w-full h-[500px] bg-[#1E1E1E] text-white font-mono p-4 rounded-b-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                            spellCheck="false"
+                        />
+                    </div>
+                    <div className="space-y-6">
+                        <div className="flex gap-4">
+                            <button className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                                <Play className="w-5 h-5"/> Run Backtest
+                            </button>
+                             <button className="flex-1 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all flex items-center justify-center gap-2">
+                                <Zap className="w-5 h-5"/> Deploy Live
+                            </button>
+                        </div>
+                        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 h-full">
+                            <h3 className="text-2xl font-bold mb-4">Backtest Results</h3>
+                            <p className="text-gray-400">Results from your backtest will be displayed here.</p>
+                            {/* Placeholder for results */}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     );
   };
   
-
-  // --- Main App Logic to Render Pages ---
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'home':
-        return <HomePage />;
-      case 'platform':
-        return <TradingPlatformPage />;
-      case 'ai':
-        return <AIPage />;
-      case 'data':
-        return <MarketDataPage />;
-      case 'pricing':
-        return <PricingPage />;
-      case 'contact':
-        return <ContactPage />;
-      case 'dashboard':
-        return <DashboardPage />;
-      default:
-        return <HomePage />;
+  const DashboardPage = () => {
+    if (!isLoggedIn) {
+        return <LoginPage />;
     }
+    return (
+        <div className="pt-32 pb-20 bg-gray-900 text-white min-h-screen">
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                <h1 className="text-4xl font-bold mb-8">Welcome Back, Trader!</h1>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                        <h2 className="text-2xl font-semibold text-purple-400 mb-4">Portfolio Value</h2>
+                        <p className="text-4xl font-bold">₹1,24,567.89</p>
+                        <p className="text-green-400 flex items-center mt-1"><TrendingUp className="w-5 h-5 mr-1" /> +₹2,345.12 (1.91%) Today</p>
+                    </div>
+                     <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+                        <h2 className="text-2xl font-semibold text-blue-400 mb-4">Active Algorithms</h2>
+                        <p className="text-4xl font-bold">3</p>
+                        <p className="text-gray-400 mt-1">1 Momentum | 2 Mean Reversion</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+  };
+  
+  const LoginPage = () => {
+      const [isLoginView, setIsLoginView] = useState(true);
+      
+      const handleAuth = (e) => {
+          e.preventDefault();
+          setIsLoggedIn(true);
+          // Redirection logic is handled by the main useEffect
+      }
+
+      return (
+          <div className="pt-32 pb-20 bg-gray-900 flex items-center justify-center min-h-screen">
+              <div className="w-full max-w-md mx-auto p-8 bg-gray-800 rounded-2xl border border-gray-700">
+                  <div className="text-center mb-8">
+                      <Logo className="justify-center"/>
+                      <h2 className="text-2xl font-bold text-white mt-4">{isLoginView ? "Welcome Back" : "Create Your Account"}</h2>
+                      <p className="text-gray-400">{isLoginView ? "Login to access your dashboard." : "Join the future of trading."}</p>
+                  </div>
+                  <form className="space-y-6" onSubmit={handleAuth}>
+                      {!isLoginView && <InputField label="Full Name" id="name" name="name" type="text" onChange={() => {}} ringColor="blue"/>}
+                      <InputField label="Email Address" id="email" name="email" type="email" onChange={() => {}} ringColor="blue"/>
+                      <InputField label="Password" id="password" name="password" type="password" onChange={() => {}} ringColor="blue"/>
+                      <button type="submit" className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg font-semibold shadow-lg hover:scale-105 transform transition-all duration-300">
+                          {isLoginView ? "Log In" : "Sign Up"}
+                      </button>
+                  </form>
+                  <p className="text-center text-sm text-gray-400 mt-6">
+                      {isLoginView ? "Don't have an account?" : "Already have an account?"}
+                      <button onClick={() => setIsLoginView(!isLoginView)} className="font-semibold text-purple-400 hover:text-purple-300 ml-1">
+                          {isLoginView ? "Sign up" : "Log in"}
+                      </button>
+                  </p>
+              </div>
+          </div>
+      );
   };
 
+  // --- Page Router ---
+
+  const renderPage = () => {
+    switch(currentPage) {
+      case 'home': return <HomePage />;
+      case 'platform': return <PlatformPage />;
+      case 'ai': return <AIPage />;
+      case 'data': return <DataPage />;
+      case 'crypto': return <CryptoPage />;
+      case 'scripting': return <ScriptingPage />;
+      case 'dashboard': return <DashboardPage />; // This component handles login view internally
+      default: return <HomePage />;
+    }
+  }
+
   return (
-    <div className="bg-black min-h-screen">
-      <style>
-        {`
-          @keyframes scroll {
-            from { transform: translateX(0); }
-            to { transform: translateX(-50%); }
-          }
-          .animate-scroll {
-            animation: scroll 40s linear infinite;
-          }
-        `}
-      </style>
+    <div className="bg-gray-900 min-h-screen">
       <NavBar />
-      {currentPage === 'home' && <MarketTicker />}
-      <main>{renderPage()}</main>
+      <MarketTicker fetchStockData={fetchStockData} />
+      <main className="pt-[101px] md:pt-[105px]">
+        {renderPage()}
+      </main>
       <Footer />
     </div>
   );
-};
+}
 
 export default App;
